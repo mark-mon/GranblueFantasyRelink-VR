@@ -38,7 +38,7 @@ Version **1.0**. Unofficial fan mod, not affiliated with or endorsed by Cygames.
 1. Download `GranblueVR-1.0.zip` from [Releases](../../releases).
 2. Copy `dinput8.dll` and `config.txt` into the game folder, next to `granblue_fantasy_relink.exe`
    (Steam: right-click the game > Manage > Browse local files).
-3. In the game's graphics options, **turn HDR off**. Motion blur (Blur) off is recommended.
+3. In the game's graphics options, **turn HDR off**, set frame rate to 120, and turn Motion blur (Blur) off.
 4. Start SteamVR, put the headset on, and launch the game from Steam.
 
 To uninstall, delete `dinput8.dll` (and `config.txt` / `GranblueVR.log`) from the game folder.
