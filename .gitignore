@@ -1,0 +1,14 @@
+obj/
+out/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+!third_party/openxr/lib/openxr_loader_static.lib
+*.dll
+*.zip
+*.log
+*.dmp
+*.bmp
+*.bak
