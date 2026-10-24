@@ -3,7 +3,7 @@
 A native VR mod for **Granblue Fantasy: Relink** (Steam, PC). The game is rendered in true stereo, one image per eye every
 frame, with 6DoF head tracking. The HUD and menus float on their own panel. Settings are changed from an in-headset menu.
 
-Version **1.0.1**. Unofficial fan mod, not affiliated with or endorsed by Cygames.
+Version **1.0.2**. Unofficial fan mod, not affiliated with or endorsed by Cygames.
 
 ## Features
 
@@ -17,10 +17,11 @@ Version **1.0.1**. Unofficial fan mod, not affiliated with or endorsed by Cygame
   your eyes.
 - **Anti-aliasing choices.** The game's TAA is quite soft in VR. You can pick off (sharpest), FXAA, a mild TAA with
   adjustable strength, or the game's own TAA.
-- **Edge culling fix.** Buildings, props and NPCs at the sides of your view are drawn even when you turn your head
-  far away from where the game camera points.
-- **In-game settings menu.** Hold both sticks clicked in (L3 + R3) for half a second, or press Insert. Changes apply live and are saved to
-  `config.txt`.
+- **Edge culling fix.** Buildings, props, NPCs and textures at the sides of your view keep being drawn when you turn your
+  head away from where the game camera points (`edge_clipping`).
+- **In-game settings menu.** Hold both sticks clicked in (L3 + R3) for half a second, or press Insert. The panel stays
+  fixed in space where it opened (or follows your head, if you prefer). Changes apply live and are saved to `config.txt`.
+- **Pre-rendered movies** play on a flat screen in front of you.
 - **Stats panel** (F7) with fps and CPU / GPU frame times.
 
 ## Requirements
@@ -36,7 +37,7 @@ Version **1.0.1**. Unofficial fan mod, not affiliated with or endorsed by Cygame
 
 ## Install
 
-1. Download `GranblueVR-1.0.1.zip` from [Releases](../../releases).
+1. Download `GranblueVR-1.0.2.zip` from [Releases](../../releases).
 2. Copy `dinput8.dll` and `config.txt` into the game folder, next to `granblue_fantasy_relink.exe`
    (Steam: right-click the game > Manage > Browse local files).
 3. In the game's graphics options, **turn HDR off**, set frame rate to 120, and turn Motion blur (Blur) off.
@@ -79,6 +80,11 @@ Everything is documented in `config.txt`, and most of it can be changed from the
 - `eye_tracking`, `vrs_follow_gaze`: use the headset's eye tracking (OpenXR `XR_EXT_eye_gaze_interaction`) to move
   the full-rate area.
 - `hud_distance`, `hud_size`, `menu_distance`, `menu_size`: panel placement in metres.
+- `edge_clipping`: `off` | `default` | `experimental`. How wide the game's own camera looks when it decides what to load
+  and draw. Wider stops textures and objects at the sides of your view dropping out as you turn your head. `experimental`
+  is wider still and worked best in testing, but may have unexpected effects.
+- `menu_anchor`: `world` (the menu stays where it opened) or `head` (it follows your head); `menu_distance`, `menu_size`
+  and `menu_height` place it.
 - `world_scale`: how big the world feels (game units per metre).
 - `hud_blur_backdrop`: the game's frosted-glass panel backgrounds. Off by default, because in VR they show a misplaced
   piece of the scene behind HUD panels.
