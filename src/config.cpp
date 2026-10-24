@@ -32,8 +32,6 @@ static const char* kDefaultConfig =
 "# decoupled_pitch: keep the horizon level. The right stick still moves the camera up and down around your\n"
 "# character, but the view no longer tilts with it; look up and down with your head instead.\n"
 "decoupled_pitch = false\n"
-"# invert_pitch_stick: with decoupled_pitch on, swap the right stick's up / down for the camera.\n"
-"invert_pitch_stick = false\n"
 "# Game units per metre of head movement.\n"
 "world_scale = 1.0\n"
 "# Render each eye with one symmetric field of view covering both eyes (true), or with the\n"
@@ -238,7 +236,6 @@ bool LoadConfig(const std::wstring& path, Config& cfg) {
         }
         else if (key == "edge_clipping") { if (lval == "off" || lval == "default" || lval == "experimental") cfg.edgeClipping = lval; else ok = false; }
         else if (key == "decoupled_pitch") { if (lval == "true" || lval == "1") cfg.decoupledPitch = true; else if (lval == "false" || lval == "0") cfg.decoupledPitch = false; else ok = false; }
-        else if (key == "invert_pitch_stick") { if (lval == "true" || lval == "1") cfg.invertPitchStick = true; else if (lval == "false" || lval == "0") cfg.invertPitchStick = false; else ok = false; }
         else if (key == "fix_cull_fov") { if (lval == "true" || lval == "1") cfg.fixCullFov = true; else if (lval == "false" || lval == "0") cfg.fixCullFov = false; else ok = false; }
         else if (key == "eye_tracking") { if (lval == "true" || lval == "1") cfg.eyeTracking = true; else if (lval == "false" || lval == "0") cfg.eyeTracking = false; else ok = false; }
         else if (key == "vrs_follow_gaze") { if (lval == "true" || lval == "1") cfg.vrsFollowGaze = true; else if (lval == "false" || lval == "0") cfg.vrsFollowGaze = false; else ok = false; }

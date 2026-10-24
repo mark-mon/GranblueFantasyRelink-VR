@@ -1622,7 +1622,6 @@ void VR_OnPresent(IDXGISwapChain* sc) {
                      g_eyeTracking ? "on" : "off", g.gazeSamples, g.gazeMisses, atanf(g.gazeTx) * 57.2958f, atanf(g.gazeTy) * 57.2958f);
             g.gazeSamples = g.gazeMisses = 0;
             char perf[512]; if (Perf_Text(perf, sizeof(perf))) { for (char* c = perf; *c; ++c) if (*c == '\n') *c = '|'; LOGI("Perf: render %ux%u | %s", g.autoW, g.autoH, perf); }
-            { void MenuOptions_LogPad(); MenuOptions_LogPad(); }
             if (g.menuOpenFrames || g.menuLayers) { LOGI("Menu: open %u frames, copied %u, ready at frame end %u, shown in %u frames (swapchain %s, view space %s, stereo %d)", g.menuOpenFrames, g.menuReadyCount, g.menuReadyAtEnd, g.menuLayers, g.menuSc ? "ok" : "none", g.view ? "ok" : "none", (int)g.stFrameBegun); g.menuOpenFrames = g.menuLayers = g.menuReadyAtEnd = g.menuReadyCount = 0; }
         }
         g.statTick = now;

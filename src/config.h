@@ -57,7 +57,6 @@ struct Config {
     int recenterKey = 0x77;          // VK_F8
     bool headTracking = true;        // apply HMD pose to the game camera
     bool decoupledPitch = false;     // level horizon: drop the game camera's pitch / roll (look up / down with your head)
-    bool invertPitchStick = false;   // with decoupled pitch: invert the right stick's up / down
     float worldScale = 1.0f;         // game units per metre
     float debugFakeHead = 0.0f;
     float debugHeadYaw = 0.0f;     // debug: fixed head yaw (degrees)
