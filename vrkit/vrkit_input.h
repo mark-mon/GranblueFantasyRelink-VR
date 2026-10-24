@@ -32,6 +32,9 @@ struct Settings {
 
 void Configure(const Settings& s);
 bool InstallHooks();            // hook the game's XInput (call once after the game loaded its xinput DLL; safe to repeat)
+// Optional: called for every pad state the game reads through XInput (before the menu's blocking), with an
+// XINPUT_GAMEPAD* to edit, e.g. to invert a stick axis. Not called for vrkit's own reads.
+void SetGameStateHook(void (*fn)(void* gamepad));
 void SetBlocking(bool block);   // game sees a neutral pad while true (plus until the chord is released)
 // True while the game should see a neutral pad: menu open, chord held, or not yet released after closing.
 // For games that read the pad some other way (e.g. DirectInput): the host blocks it in its own hooks.

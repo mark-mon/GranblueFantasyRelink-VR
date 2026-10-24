@@ -1,6 +1,8 @@
 // Granblue VR adapter for the vrkit in-game settings menu.
 // Registers the mod's config.txt options with vrkit::Options (pointing straight at g_cfg fields) and wires
 // each one to the code that applies it live. Everything game-independent lives in vrkit/.
+#include <windows.h>
+#include <xinput.h>
 #include "vrkit_options.h"
 #include "vrkit_menu.h"
 #include "globals.h"
@@ -36,6 +38,12 @@ vrkit::input::Settings MenuInput() {
     return in;
 }
 void ApplyMenuInput() { vrkit::input::Configure(MenuInput()); }
+// Pad state the game reads: with decoupled pitch + invert, flip the right stick's vertical axis.
+void GamePadHook(void* gp) {
+    if (!g_cfg.decoupledPitch || !g_cfg.invertPitchStick) return;
+    SHORT& ry = ((XINPUT_GAMEPAD*)gp)->sThumbRY;
+    ry = ry == -32768 ? 32767 : (SHORT)-ry;
+}
 
 void Register() {
     using vrkit::Options;
@@ -93,6 +101,8 @@ void Register() {
     o.AddBool("View", "head_tracking", "Head tracking", &g_cfg.headTracking, "Apply the headset pose to the game camera.");
     o.AddBool("View", "decoupled_pitch", "Decoupled pitch", &g_cfg.decoupledPitch,
               "Keeps the horizon level: the right stick moves the camera up and down without tilting the view. Look up and down with your head.");
+    o.AddBool("View", "invert_pitch_stick", "Invert camera up / down", &g_cfg.invertPitchStick,
+              "With decoupled pitch: swap the right stick's up and down, so up moves the camera up.").visible = [] { return g_cfg.decoupledPitch; };
     o.AddFloat("View", "world_scale", "World scale", &g_cfg.worldScale, 0.1f, 10.f, 0.05f, 2,
                "Game units per metre: higher = the world feels smaller.");
     o.AddBool("View", "fix_cull_fov", "Edge culling fix", &g_cfg.fixCullFov,
@@ -137,6 +147,7 @@ void MenuOptions_Init(ID3D11Device* dev, ID3D11DeviceContext* imm) {
         return std::string(perf);
     };
     s.input = MenuInput();
+    vrkit::input::SetGameStateHook(GamePadHook);
     if (!vrkit::menu::Init(dev, imm, s)) LOGE("Settings menu: init failed (menu unavailable)");
     else LOGI("Settings menu ready: hold %s %d ms (%s)%s", g_cfg.menuChord == "l3r3" ? "L3+R3" : g_cfg.menuChord == "ltrt" ? "LT+RT" : "(no pad chord)", g_cfg.menuHoldMs, g_cfg.menuChordPass ? "game also sees it" : "hidden from the game", g_cfg.menuKey ? " or press menu_key" : "");
 }

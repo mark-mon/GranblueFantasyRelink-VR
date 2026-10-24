@@ -16,7 +16,9 @@ volatile bool g_block = false, g_chordHeld = false;
 DWORD g_fakePacket[4] = {};
 
 volatile bool g_untilRelease = false;   // after closing: keep blocking until the pad is released
+void (*g_gameHook)(void* gamepad) = nullptr;   // optional host hook: edit the pad state the game sees
 DWORD Filter(DWORD r, DWORD user, XINPUT_STATE* st) {
+    if (r == ERROR_SUCCESS && st && g_gameHook) g_gameHook(&st->Gamepad);
     if (r == ERROR_SUCCESS && st && g_untilRelease && !g_block) {
         const XINPUT_GAMEPAD& p = st->Gamepad;
         if (!p.wButtons && p.bLeftTrigger < 30 && p.bRightTrigger < 30) g_untilRelease = false;
@@ -72,6 +74,7 @@ bool InstallHooks() {
     return any;
 }
 
+void SetGameStateHook(void (*fn)(void* gamepad)) { g_gameHook = fn; }
 void SetBlocking(bool b) { if (g_block && !b) g_untilRelease = true; g_block = b; }
 volatile bool g_chordDown = false;   // all chord buttons down right now (before the hold time)
 bool GameInputBlocked() { return g_block || g_chordHeld || g_untilRelease || g_chordDown; }
