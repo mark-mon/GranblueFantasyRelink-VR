@@ -391,8 +391,20 @@ void ApplyPose(const float* eye, const float* target, const float* up, const Pos
     outUp[0] = nu.x; outUp[1] = nu.y; outUp[2] = nu.z; outUp[3] = up[3];
 }
 
+volatile int g_viewLog = 0;
+void ViewDumpStart() { g_viewLog = 60; LOGI("viewdump: main view element %p", (void*)*(uintptr_t*)(g_base + RVA_VIEWS)); }
 void __fastcall hkUpdateView(void** h, const float* eye, const float* target, const float* up, float a5, uint8_t a6, uint8_t a7) {
-    if (!IsMainView(h)) { oUpdateView(h, eye, target, up, a5, a6, a7); return; }
+    if (!IsMainView(h)) {
+        if (g_viewLog > 0) {   // diagnostics (trigger "viewdump"): other views updated, and whether they share the main camera
+            --g_viewLog;
+            uintptr_t arr = *(uintptr_t*)(g_base + RVA_VIEWS);
+            bool same = g_last.valid && fabsf(eye[0] - g_last.eye[0]) < 0.01f && fabsf(eye[1] - g_last.eye[1]) < 0.01f && fabsf(eye[2] - g_last.eye[2]) < 0.01f;
+            LOGI("viewdump: view %p (index %lld) eye (%.2f %.2f %.2f) target (%.2f %.2f %.2f) up (%.2f %.2f %.2f) a5 %.3f a6 %d a7 %d%s",
+                 h ? *h : nullptr, h && *h && arr ? ((long long)((uintptr_t)*h - arr)) / 0x9f0 : -1, eye[0], eye[1], eye[2], target[0], target[1], target[2],
+                 up[0], up[1], up[2], a5, a6, a7, same ? "  << same eye as main" : "");
+        }
+        oUpdateView(h, eye, target, up, a5, a6, a7); return;
+    }
     ++g_mainUpdates;
     g_lastMainUpdateAt = g_renderFrames.load();
     memcpy(g_last.eye, eye, 16); memcpy(g_last.target, target, 16); memcpy(g_last.up, up, 16);
@@ -444,7 +456,10 @@ void SetupEye(int e, const EyeSetup& es) {
     // render with also covers the other eye (offset by the IPD); the projection is set exactly afterwards.
     float tx = (std::max)(es.tanR, -es.tanL), ty = (std::max)(es.tanU, -es.tanD);
     if ((g_cfg.debugStereo & 0xF) != 2) {
-        float m = g_cfg.cullMarginDeg * 0.0174533f;
+        // Culling margin: the game decides what to draw with the head pose of its camera update, a frame or two before
+        // the eyes are rendered; on fast head turns the newest view runs past that cone. edge_clipping widens it.
+        float md = (std::max)(g_cfg.cullMarginDeg, g_cfg.edgeClipping == "experimental" ? 25.f : g_cfg.edgeClipping == "default" ? 15.f : 0.f);
+        float m = md * 0.0174533f;
         float cx = tanf((std::min)(atanf(tx) + m, 1.48f)), cy = tanf((std::min)(atanf(ty) + m, 1.48f));
         *(float*)(view + 0x9d4) = 2.f * atanf(cy);
         *(float*)(view + 0x9d0) = cx / cy;
@@ -519,7 +534,16 @@ volatile LONG g_camFovFixes = 0;
 // < 0 = leave the camera alone (comparison).
 float g_camFovOverride = 0.f;
 uintptr_t g_fovCam = 0; float g_camGameFov = 0.f, g_camWritten = 0.f; bool g_camFovSet = false;
+uintptr_t g_lastCam = 0;
+// Experiment (trigger "camhead=1"): after the main camera's update, also turn the camera object's own pose
+// (eye +0x100, target +0x110, up +0x120) with the head, so systems that read the camera object see where the
+// player looks; the game's values are put back before its next update.
+int g_camHead = 0; uintptr_t g_mainCam = 0; bool g_camPoseSwapped = false; float g_camPoseSave[12];
+static int g_camHeadLog = 0;
+void SetHeadFollow(int v) { g_camHead = v; g_camHeadLog = 6; LOGI("camera object follows head -> %d", v); }
 void __fastcall hkCamUpdate(uintptr_t cam) {
+    g_lastCam = cam;
+    if (cam && cam == g_mainCam && g_camPoseSwapped) { memcpy((void*)(cam + 0x100), g_camPoseSave, 48); g_camPoseSwapped = false; }
     if (cam && g_fovOverridden && g_cfg.fixCullFov && g_camFovOverride >= 0.f && g_ourFov > 0.f) {
         float* pf = (float*)(cam + 0x138);
         // edge_clipping: the camera's field of view for these checks (vertical; the camera is 16:9, so much wider
@@ -536,6 +560,19 @@ void __fastcall hkCamUpdate(uintptr_t cam) {
         }
     }
     oCamUpdate(cam);
+    if (cam && g_fovView && *(volatile uintptr_t*)(cam + 0x60) == g_fovView) {
+        if (g_mainCam != cam) { g_mainCam = cam; LOGI("Camera: main camera object %p", (void*)cam); }
+        Pose head;
+        if (g_camHead && g_fovOverridden && g_cfg.headTracking && VR_GetHeadPose(&head)) {
+            float* c = (float*)(cam + 0x100);
+            memcpy(g_camPoseSave, c, 48);
+            alignas(16) float e[4], t[4], u[4];
+            ApplyPose(c, c + 4, c + 8, head, e, t, u);
+            if (g_camHeadLog > 0) { --g_camHeadLog; LOGI("camhead: eye (%.2f %.2f %.2f) target (%.2f %.2f %.2f) -> target (%.2f %.2f %.2f)", c[0], c[1], c[2], c[4], c[5], c[6], t[0], t[1], t[2]); }
+            memcpy(c, e, 12); memcpy(c + 4, t, 12); memcpy(c + 8, u, 12);
+            g_camPoseSwapped = true;
+        }
+    }
     if (!g_fovOverridden || !g_cfg.fixCullFov || !cam) return;
     uintptr_t view = *(volatile uintptr_t*)(cam + 0x60);
     if (!view || view != g_fovView) return;
@@ -927,3 +964,49 @@ static void SyncListParity() {
 
 void Camera_SetFovOverride(float rad) { g_camFovOverride = rad; }
 LONG Camera_TakeFovFixes() { return InterlockedExchange(&g_camFovFixes, 0); }
+
+// Diagnostics (trigger "camdump"): where the game camera object keeps its position / target / direction.
+// Scans the camera object and its view element for float triples matching the last UpdateView eye / target
+// (the game's own values, before head tracking) and for the normalised view direction.
+void Camera_Dump() {
+    uintptr_t cam = g_lastCam;
+    if (!cam || !g_last.valid) { LOGI("camdump: no camera yet"); return; }
+    const float* E = g_last.eye; const float* T = g_last.target;
+    float fx = T[0] - E[0], fy = T[1] - E[1], fz = T[2] - E[2], fl = sqrtf(fx * fx + fy * fy + fz * fz);
+    if (fl > 1e-5f) { fx /= fl; fy /= fl; fz /= fl; }
+    LOGI("camdump: cam %p view %p eye (%.3f %.3f %.3f) target (%.3f %.3f %.3f) dir (%.3f %.3f %.3f) dist %.3f",
+         (void*)cam, (void*)*(uintptr_t*)(cam + 0x60), E[0], E[1], E[2], T[0], T[1], T[2], fx, fy, fz, fl);
+    auto near3 = [](const float* p, float a, float b, float c, float eps) { return fabsf(p[0] - a) < eps && fabsf(p[1] - b) < eps && fabsf(p[2] - c) < eps; };
+    auto scan = [&](const char* what, uintptr_t base, size_t len) {
+        MEMORY_BASIC_INFORMATION mbi;
+        if (!VirtualQuery((void*)base, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) return;
+        size_t avail = (size_t)((uintptr_t)mbi.BaseAddress + mbi.RegionSize - base);
+        if (len > avail) len = avail;
+        for (size_t o = 0; o + 12 <= len; o += 4) {
+            const float* p = (const float*)(base + o);
+            if (near3(p, E[0], E[1], E[2], 0.01f)) LOGI("camdump: %s+0x%zx = eye", what, o);
+            if (near3(p, T[0], T[1], T[2], 0.01f)) LOGI("camdump: %s+0x%zx = target", what, o);
+            if (near3(p, fx, fy, fz, 0.01f)) LOGI("camdump: %s+0x%zx = direction", what, o);
+            if (near3(p, -fx, -fy, -fz, 0.01f)) LOGI("camdump: %s+0x%zx = -direction", what, o);
+        }
+    };
+    scan("cam", cam, 0x1000);
+    if (uintptr_t v = *(uintptr_t*)(cam + 0x60)) scan("view", v, 0xa00);
+    for (int k = 0; k < 0x400; k += 8) {   // pointers from the camera object to other objects holding the pose
+        uintptr_t p = *(uintptr_t*)(cam + k);
+        if (p > 0x10000 && p < 0x7fffffffffffull && (p & 7) == 0 && p != cam) {
+            MEMORY_BASIC_INFORMATION mbi;
+            if (VirtualQuery((void*)p, &mbi, sizeof(mbi)) && mbi.State == MEM_COMMIT && (mbi.Protect & (PAGE_READWRITE | PAGE_READONLY)) && !(mbi.Protect & PAGE_GUARD)) {
+                char nm[32]; snprintf(nm, sizeof(nm), "cam[0x%x]", k); scan(nm, p, 0x400);
+            }
+        }
+    }
+    for (int o = 0; o < 0x400; o += 0x20) {   // raw camera object: 8 floats per line
+        const float* f = (const float*)(cam + o);
+        LOGI("camdump: raw +%03x: %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f %10.4f", o, f[0], f[1], f[2], f[3], f[4], f[5], f[6], f[7]);
+    }
+    LOGI("camdump: done");
+}
+
+void Camera_ViewDump() { ViewDumpStart(); }
+void Camera_SetHeadFollow(int v) { SetHeadFollow(v); }

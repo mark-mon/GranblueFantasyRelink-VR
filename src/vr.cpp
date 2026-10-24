@@ -1539,6 +1539,10 @@ void VR_OnPresent(IDXGISwapChain* sc) {
             else if (!strcmp(cmd, "passes")) Passes_Start();
             else if (!strncmp(cmd, "cull=", 5)) { g_cfg.cullMarginDeg = (float)atof(cmd + 5); LOGI("cull_margin -> %.1f", g_cfg.cullMarginDeg); }
             else if (!strncmp(cmd, "cullfix=", 8)) { g_cfg.fixCullFov = cmd[8] == '1'; LOGI("fix_cull_fov -> %d", (int)g_cfg.fixCullFov); }
+            else if (!strcmp(cmd, "viewdump")) { void Camera_ViewDump(); Camera_ViewDump(); }
+            else if (!strncmp(cmd, "camhead=", 8)) { void Camera_SetHeadFollow(int); Camera_SetHeadFollow(atoi(cmd + 8)); }
+            else if (!strncmp(cmd, "edge=", 5)) { g_cfg.edgeClipping = cmd + 5; LOGI("edge_clipping -> %s", g_cfg.edgeClipping.c_str()); }
+            else if (!strcmp(cmd, "camdump")) { void Camera_Dump(); Camera_Dump(); }
             else if (!strncmp(cmd, "skipps=", 7)) { void PostFx_SetSkipList(const char*); PostFx_SetSkipList(cmd + 7); }
             else if (!strncmp(cmd, "yaw=", 4)) { g_cfg.debugHeadYaw = (float)atof(cmd + 4); LOGI("debug_head_yaw -> %.1f", g_cfg.debugHeadYaw); }
             else if (!strncmp(cmd, "camfov=", 7)) { void Camera_SetFovOverride(float); float d = (float)atof(cmd + 7); Camera_SetFovOverride(d * 0.0174533f); LOGI("camera fov override -> %.1f deg", d); }

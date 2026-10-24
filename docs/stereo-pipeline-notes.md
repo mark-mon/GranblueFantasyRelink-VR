@@ -82,3 +82,18 @@ Per-frame data is produced once per game frame, outside render-frame:
   blurSizeMax_ ...; writes g_DofTexture / g_DofMediumDist, also reads the bloom chain). Not dispatched in town,
   menus or the party screen; needs a scene that uses it (cutscene / dialogue) to find the consumer and build a
   disable option. Found with debug_dump_shaders (GranblueVR_allshaders\index.txt).
+
+## 1.0.3: what the remaining edge drop-outs are (2026-10-24)
+- Main camera object: the one whose +0x60 is the main view element (a static object in the exe, e.g. exe+0x...4860 in
+  this build). Layout: +0x100 eye, +0x110 target, +0x120 up (vec4 each), +0x134 near?, +0x138 vertical FOV (rad);
+  +0x140..0x178 a second copy (FOV at +0x178 stays the game's 50 deg). Other UpdateView calls (view indices 2-11)
+  are fixed UI/2D views (eye (8,8,22) / (0,0,10)), none share the main camera.
+- Turning the camera object's pose with the head (trigger camhead=1: write the head-rotated eye/target/up into
+  +0x100.. after the update, restore before the next) is stable (no drift), but at a fixed head yaw of 60 or 110 deg
+  nothing was missing without it either: once the view and camera FOV are wide, there is no direction-based culling
+  left at a static pose.
+- So the remaining drop-outs happen only while the head moves: the game decides visibility with the head pose of
+  its camera update, a frame or two before the eyes are rendered with a newer pose. edge_clipping now also widens
+  the culling margin (default 15 deg, experimental 25 deg; was 6). No measurable cost on the test PC (draws, CPU,
+  GPU unchanged at a static pose).
+- Triggers added for this: camdump, viewdump, camhead=0|1, edge=off|default|experimental.
