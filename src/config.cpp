@@ -106,13 +106,17 @@ static const char* kDefaultConfig =
 "# In the menu: D-pad / left stick to move and change,\n"
 "# A = toggle, Y = undo (value at start), LB / RB = page, B = close. Keyboard: arrows, Enter, Delete, PgUp / PgDn,\n"
 "# Backspace. Changes apply right away; this file is updated when the menu closes.\n"
-"# menu_distance / menu_size: panel distance and width in metres.\n"
+"# menu_anchor: world = the panel stays fixed where it opened (turn your head to read its edges),\n"
+"#   head = it follows your head. menu_distance / menu_size / menu_height: distance, width and height\n"
+"#   offset from eye level, in metres.\n"
 "menu_chord = l3r3\n"
 "menu_chord_pass = true\n"
 "menu_hold_ms = 500\n"
 "menu_key = insert\n"
+"menu_anchor = world\n"
 "menu_distance = 1.0\n"
-"menu_size = 0.9\n"
+"menu_size = 0.8\n"
+"menu_height = -0.05\n"
 "\n"
 "# Anti-aliasing (replaces the game's TAA pass). aa_mode:\n"
 "#   game = the game's own TAA (soft)      off  = none (sharpest, edges shimmer)\n"
@@ -261,6 +265,8 @@ bool LoadConfig(const std::wstring& path, Config& cfg) {
         else if (key == "menu_hold_ms") { int v = atoi(val.c_str()); ok = v >= 100 && v <= 5000; if (ok) cfg.menuHoldMs = v; }
         else if (key == "menu_distance") ok = ParseFloat(val, cfg.menuDistance, 0.3f, 5.f);
         else if (key == "menu_size") ok = ParseFloat(val, cfg.menuSize, 0.2f, 5.f);
+        else if (key == "menu_height") ok = ParseFloat(val, cfg.menuHeight, -1.f, 1.f);
+        else if (key == "menu_anchor") { if (lval == "world" || lval == "head") cfg.menuAnchor = lval; else ok = false; }
         else if (key == "menu_key") {
             int n = 0;
             if (lval == "none" || lval == "off") cfg.menuKey = 0;

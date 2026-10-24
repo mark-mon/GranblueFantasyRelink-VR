@@ -33,6 +33,13 @@ struct Settings {
 void Configure(const Settings& s);
 bool InstallHooks();            // hook the game's XInput (call once after the game loaded its xinput DLL; safe to repeat)
 void SetBlocking(bool block);   // game sees a neutral pad while true (plus until the chord is released)
+// True while the game should see a neutral pad: menu open, chord held, or not yet released after closing.
+// For games that read the pad some other way (e.g. DirectInput): the host blocks it in its own hooks.
+bool GameInputBlocked();
+// Test automation: these buttons are reported by the next Poll() as if pressed.
+void Inject(uint32_t buttons);
+// Diagnostics: whether the last Poll() found an XInput pad (and which user index), -1 = none.
+int PadUser();
 // Poll once per frame. Returns newly pressed buttons (with auto-repeat for Up/Down/Left/Right when held);
 // Toggle is set when the chord was held long enough or the keyboard toggle key was pressed.
 uint32_t Poll();

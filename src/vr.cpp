@@ -14,6 +14,7 @@
 #define XR_USE_PLATFORM_WIN32
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
+#include "vrkit_menu_placement.h"
 #include "globals.h"
 #include "MinHook.h"
 #include "camera.h"
@@ -582,7 +583,7 @@ static bool InitXr(IDXGISwapChain* sc) {
 }
 
 void MenuOptions_Init(ID3D11Device* dev, ID3D11DeviceContext* imm);
-static void MenuLayer(XrCompositionLayerQuad& q);
+static void MenuLayer(XrCompositionLayerQuad& q, XrTime t);
 static bool InitD3D(IDXGISwapChain* sc) {
     if (FAILED(sc->GetDevice(__uuidof(ID3D11Device), (void**)&g.dev))) {
         LOGE("Game swapchain is not backed by a D3D11 device; disabling");
@@ -645,7 +646,9 @@ static void PollEvents() {
     }
 }
 
+static vrkit::menu::QuadPlacer& MenuPlacer();
 static void Recenter(XrTime t) {
+    MenuPlacer().Reset();   // a fixed menu is re-placed in front of you
     XrSpaceLocation loc = { XR_TYPE_SPACE_LOCATION };
     if (XR_FAILED(xrLocateSpace(g.view, g.local, t, &loc)) ||
         !(loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) ||
@@ -766,7 +769,7 @@ static void RunXrFrame(IDXGISwapChain* sc) {
         quad.size = { g_cfg.screenWidth, g_cfg.screenWidth * (float)g.quadH / (float)g.quadW };
         layers[layerCount++] = (XrCompositionLayerBaseHeader*)&quad;
     }
-    if (fs.shouldRender && g.menuReady && g.menuSc && g.view) { MenuLayer(mq); layers[layerCount++] = (XrCompositionLayerBaseHeader*)&mq; ++g.menuLayers; }
+    if (fs.shouldRender && g.menuReady && g.menuSc && g.view) { MenuLayer(mq, fs.predictedDisplayTime); layers[layerCount++] = (XrCompositionLayerBaseHeader*)&mq; ++g.menuLayers; }
     XrFrameEndInfo fei = { XR_TYPE_FRAME_END_INFO };
     fei.displayTime = fs.predictedDisplayTime;
     fei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -927,13 +930,32 @@ static void UpdateMenu() {
     else if (le < 5) { ++le; LOGE("Menu: wait %s, image %u of %zu", XrStr(wr), idx, g.menuImg.size()); }
     xrReleaseSwapchainImage(g.menuSc, &ri);
 }
-static void MenuLayer(XrCompositionLayerQuad& q) {
+// Menu panel placement (vrkit_menu_placement.h): fixed in the world in front of where you looked when it opened
+// (menu_anchor = world, default), or head-locked (head). Called for every frame the menu is shown.
+static vrkit::menu::QuadPlacer g_menuPlacer;
+static vrkit::menu::QuadPlacer& MenuPlacer() { return g_menuPlacer; }
+static unsigned g_menuShownFrame = 0;
+static void MenuLayer(XrCompositionLayerQuad& q, XrTime t) {
+    vrkit::menu::Placement pl;
+    pl.distance = g_cfg.menuDistance; pl.width = g_cfg.menuSize; pl.offsetY = g_cfg.menuHeight;
+    pl.anchor = g_cfg.menuAnchor == "head" ? 1 : 0;
+    // the placer captures the head pose on the first frame it sees the menu shown after a hidden frame
+    bool fresh = g_menuShownFrame + 1 != g.frames;
+    g_menuShownFrame = g.frames;
+    if (fresh) g_menuPlacer.Update(false, false, XrPosef{});
+    XrPosef head = { { 0, 0, 0, 1 }, { 0, 0, 0 } }; bool headOk = false;
+    if (g.local && g.view) {
+        XrSpaceLocation loc = { XR_TYPE_SPACE_LOCATION };
+        if (XR_SUCCEEDED(xrLocateSpace(g.view, g.local, t, &loc)) &&
+            (loc.locationFlags & (XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT)) ==
+                (XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT)) { head = loc.pose; headOk = true; }
+    }
+    g_menuPlacer.Update(true, headOk, head);
     q.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
-    q.space = g.view; q.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+    q.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
     q.subImage.swapchain = g.menuSc;
     q.subImage.imageRect = { { 0, 0 }, { (int32_t)g.menuW, (int32_t)g.menuH } };
-    q.pose = { { 0, 0, 0, 1 }, { 0.f, 0.f, -g_cfg.menuDistance } };
-    q.size = { g_cfg.menuSize, g_cfg.menuSize * (float)g.menuH / (float)g.menuW };
+    g_menuPlacer.Apply(pl, g.local, g.view, g.menuW, g.menuH, q);
 }
 // ---- stats overlay: text drawn with GDI, shown as a small head-locked quad layer
 static const UINT kStatsW = 1024, kStatsH = 304;
@@ -1120,7 +1142,7 @@ static void StereoEndFrame() {
             sq.size = { 0.55f, 0.55f * kStatsH / kStatsW };
             layers[n++] = (XrCompositionLayerBaseHeader*)&sq;
         }
-        if (g.menuReady && g.menuSc && g.view) { MenuLayer(mq); layers[n++] = (XrCompositionLayerBaseHeader*)&mq; ++g.menuLayers; }
+        if (g.menuReady && g.menuSc && g.view) { MenuLayer(mq, g.stDisplayTime); layers[n++] = (XrCompositionLayerBaseHeader*)&mq; ++g.menuLayers; }
     }
     g.hudReady = false;
     XrFrameEndInfo fei = { XR_TYPE_FRAME_END_INFO };

@@ -37,7 +37,9 @@ struct Config {
     bool menuChordPass = true;       // the game still sees the chord until the hold time (Granblue: L3+R3 = party skill)
     int menuKey = 0x2D;              // VK_INSERT
     float menuDistance = 1.0f;       // metres in front of the eyes
-    float menuSize = 0.9f;           // panel width in metres
+    float menuSize = 0.8f;           // panel width in metres
+    float menuHeight = -0.05f;       // metres up (+) / down (-) from eye level
+    std::string menuAnchor = "world"; // world (fixed where it opened) | head (follows the headset)
     int screenshotKey = 0x7A;        // VK_F11: save both eye images
     int captureKey = 0x79;           // VK_F10: write GranblueVR_passes.txt + GranblueVR_shaders (diagnostics)
     bool desktopVsync = false;

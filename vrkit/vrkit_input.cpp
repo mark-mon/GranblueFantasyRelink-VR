@@ -58,9 +58,12 @@ bool InstallHooks() {
             void* px = (void*)GetProcAddress(m, (LPCSTR)100);   // XInputGetStateEx (ordinal 100, includes the guide button)
             if (px && px != p && MH_CreateHook(px, kHkEx[k], (void**)&h.origEx) == MH_OK && MH_EnableHook(px) == MH_OK) h.targetEx = px;
         }
-        if (h.orig && !g_read) g_read = h.orig;
         any = any || h.target;
     }
+    // Read the pad through the newest XInput the game uses (1_4 before 1_3 before 9_1_0): Steam Input and
+    // some wrappers only serve the newer DLLs, and a proxy xinput9_1_0 (such as the VR mod itself) may be
+    // loaded long before the game loads xinput1_4.
+    for (int k = 0; k < 3; ++k) if (g_mods[k].orig) { g_read = g_mods[k].orig; break; }
     if (!g_read) {   // the game hasn't loaded XInput (yet): read the pad ourselves
         HMODULE m = LoadLibraryW(L"xinput1_4.dll");
         if (!m) m = LoadLibraryW(L"xinput1_3.dll");
@@ -70,12 +73,36 @@ bool InstallHooks() {
 }
 
 void SetBlocking(bool b) { if (g_block && !b) g_untilRelease = true; g_block = b; }
+volatile bool g_chordDown = false;   // all chord buttons down right now (before the hold time)
+bool GameInputBlocked() { return g_block || g_chordHeld || g_untilRelease || g_chordDown; }
+volatile LONG g_injected = 0;
+void Inject(uint32_t b) { InterlockedOr(&g_injected, (LONG)b); }
+volatile int g_padUser = -1;
+int PadUser() { return g_padUser; }
 
 uint32_t Poll() {
-    uint32_t out = 0;
+    uint32_t out = (uint32_t)InterlockedExchange(&g_injected, 0);
     // --- gamepad (first connected)
     XINPUT_STATE st = {}; bool pad = false;
-    if (g_read) for (DWORD u = 0; u < 4 && !pad; ++u) { ZeroMemory(&st, sizeof(st)); pad = g_read(u, &st) == ERROR_SUCCESS; }
+    int padUser = -1;
+    // Try every hooked XInput (newest first), then the fallback reader: a pad may only be visible through one.
+    GetStateFn readers[4] = {}; int nr = 0;
+    for (int k = 0; k < 3; ++k) if (g_mods[k].orig) readers[nr++] = g_mods[k].orig;
+    if (!nr && g_read) readers[nr++] = g_read;
+    int which = -1;
+    for (int r = 0; r < nr && !pad; ++r)
+        for (DWORD u = 0; u < 4 && !pad; ++u) { ZeroMemory(&st, sizeof(st)); pad = readers[r](u, &st) == ERROR_SUCCESS; if (pad) { which = r; padUser = (int)u; } }
+    g_padUser = padUser;
+    {   // log once whenever the pad source (or its absence) changes, so missing gamepad input can be diagnosed
+        static int lastWhich = -2;
+        if (which != lastWhich) {
+            lastWhich = which;
+            int k = -1, c = -1;
+            for (int m = 0; m < 3; ++m) if (g_mods[m].orig) { ++c; if (c == which) { k = m; break; } }
+            if (pad) Log("vrkit: gamepad read via %ls, user %d", k >= 0 ? g_mods[k].dll : L"fallback", padUser);
+            else Log("vrkit: no XInput gamepad found (%d readers)", nr);
+        }
+    }
     WORD b = pad ? st.Gamepad.wButtons : 0;
     float lt = pad ? st.Gamepad.bLeftTrigger / 255.f : 0.f, rt = pad ? st.Gamepad.bRightTrigger / 255.f : 0.f;
     // stick as d-pad
@@ -86,6 +113,10 @@ uint32_t Poll() {
         if (st.Gamepad.sThumbLX > dz) b |= XINPUT_GAMEPAD_DPAD_RIGHT;
         if (st.Gamepad.sThumbLX < -dz) b |= XINPUT_GAMEPAD_DPAD_LEFT;
     }
+    // after closing, blocking ends once the pad is released (also for games that never call XInput)
+    if (g_untilRelease && !g_block && pad && !st.Gamepad.wButtons && st.Gamepad.bLeftTrigger < 30 && st.Gamepad.bRightTrigger < 30)
+        g_untilRelease = false;
+    if (g_untilRelease && !pad) g_untilRelease = false;
     WORD pressed = b & ~g_prevButtons;
     g_prevButtons = b;
     // --- open / close chord (default L3 + R3)
@@ -93,6 +124,7 @@ uint32_t Poll() {
     bool chord = pad && (g_set.chordButtons || g_set.chordTriggers);
     if (g_set.chordButtons) chord = chord && (st.Gamepad.wButtons & g_set.chordButtons) == g_set.chordButtons;
     if (g_set.chordTriggers) chord = chord && lt > g_set.triggerThreshold && rt > g_set.triggerThreshold;
+    g_chordDown = chord && !g_set.chordPassThrough;
     if (chord) {
         if (!g_chordStart) g_chordStart = now;
         if (!g_chordFired && now - g_chordStart >= (DWORD)g_set.chordHoldMs) { g_chordFired = true; out |= Toggle; }
