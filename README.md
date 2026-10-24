@@ -3,7 +3,7 @@
 A native VR mod for **Granblue Fantasy: Relink** (Steam, PC). The game is rendered in true stereo, one image per eye every
 frame, with 6DoF head tracking. The HUD and menus float on their own panel. Settings are changed from an in-headset menu.
 
-Version **1.0**. Unofficial fan mod, not affiliated with or endorsed by Cygames.
+Version **1.0.1**. Unofficial fan mod, not affiliated with or endorsed by Cygames.
 
 ## Features
 
@@ -18,7 +18,7 @@ Version **1.0**. Unofficial fan mod, not affiliated with or endorsed by Cygames.
 - **Anti-aliasing choices.** The game's TAA is quite soft in VR. You can pick off (sharpest), FXAA, a mild TAA with
   adjustable strength, or the game's own TAA.
 - **Edge culling fix.** Objects at the edge of your view no longer pop in and out when you turn your head.
-- **In-game settings menu.** Click both sticks in (L3 + R3) or press Insert. Changes apply live and are saved to
+- **In-game settings menu.** Hold both sticks clicked in (L3 + R3) for half a second, or press Insert. Changes apply live and are saved to
   `config.txt`.
 - **Stats panel** (F7) with fps and CPU / GPU frame times.
 
@@ -35,7 +35,7 @@ Version **1.0**. Unofficial fan mod, not affiliated with or endorsed by Cygames.
 
 ## Install
 
-1. Download `GranblueVR-1.0.zip` from [Releases](../../releases).
+1. Download `GranblueVR-1.0.1.zip` from [Releases](../../releases).
 2. Copy `dinput8.dll` and `config.txt` into the game folder, next to `granblue_fantasy_relink.exe`
    (Steam: right-click the game > Manage > Browse local files).
 3. In the game's graphics options, **turn HDR off**, set frame rate to 120, and turn Motion blur (Blur) off.
@@ -47,7 +47,7 @@ To uninstall, delete `dinput8.dll` (and `config.txt` / `GranblueVR.log`) from th
 
 | | Controller | Keyboard |
 |---|---|---|
-| Open / close the VR settings menu | click **L3 + R3** together (hold 0.3 s) | **Insert** |
+| Open / close the VR settings menu | hold **L3 + R3** together for 0.5 s | **Insert** |
 | Menu: select / change | D-pad or left stick | arrow keys |
 | Menu: toggle, next choice | A | Enter |
 | Menu: undo (back to the value at start) | Y | Delete |
@@ -60,6 +60,8 @@ To uninstall, delete `dinput8.dll` (and `config.txt` / `GranblueVR.log`) from th
 | Render scale down / up | | F5 / F6 |
 | Stats panel | | F7 |
 
+A short L3 + R3 press still does the game's party skill; only holding it opens the menu (`menu_chord_pass`). To use a
+different button, set `menu_chord = ltrt` (both triggers) or `none` (keyboard only), in `config.txt` or the menu.
 While the menu is open, the game doesn't receive controller input. All keys can be changed in `config.txt`.
 
 ## Settings worth knowing

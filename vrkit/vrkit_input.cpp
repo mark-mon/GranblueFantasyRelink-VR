@@ -21,8 +21,9 @@ DWORD Filter(DWORD r, DWORD user, XINPUT_STATE* st) {
         const XINPUT_GAMEPAD& p = st->Gamepad;
         if (!p.wButtons && p.bLeftTrigger < 30 && p.bRightTrigger < 30) g_untilRelease = false;
     }
-    // while all chord buttons are down together, the game doesn't see them (no stray L3 / R3 actions)
-    if (r == ERROR_SUCCESS && st && g_set.chordButtons && (st->Gamepad.wButtons & g_set.chordButtons) == g_set.chordButtons)
+    // while all chord buttons are down together, the game doesn't see them (no stray L3 / R3 actions),
+    // unless chordPassThrough: then only after the hold time (g_chordHeld below)
+    if (r == ERROR_SUCCESS && st && g_set.chordButtons && !g_set.chordPassThrough && (st->Gamepad.wButtons & g_set.chordButtons) == g_set.chordButtons)
         st->Gamepad.wButtons &= ~g_set.chordButtons;
     if (r == ERROR_SUCCESS && st && (g_block || g_chordHeld || g_untilRelease)) {
         DWORD pkt = ++g_fakePacket[user & 3];

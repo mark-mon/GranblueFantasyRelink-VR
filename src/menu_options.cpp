@@ -25,6 +25,17 @@ const char* PostFx_AaValue();
 namespace {
 void LogToMod(const char* m) { LOGI("%s", m); }
 
+vrkit::input::Settings MenuInput() {
+    vrkit::input::Settings in;
+    in.chordHoldMs = g_cfg.menuHoldMs;
+    in.chordButtons = g_cfg.menuChord == "l3r3" ? (0x0040 | 0x0080) : 0;   // XINPUT_GAMEPAD_LEFT_THUMB | RIGHT_THUMB
+    in.chordTriggers = g_cfg.menuChord == "ltrt";
+    in.chordPassThrough = g_cfg.menuChordPass;
+    in.keyboardToggleVk = g_cfg.menuKey;
+    return in;
+}
+void ApplyMenuInput() { vrkit::input::Configure(MenuInput()); }
+
 void Register() {
     using vrkit::Options;
     Options& o = Options::Get();
@@ -42,6 +53,13 @@ void Register() {
                "How far away the game's HUD panel floats.");
     o.AddFloat("Display", "hud_size", "HUD width (m)", &g_cfg.hudSize, 0.2f, 10.f, 0.1f, 1,
                "Width of the HUD panel.");
+    auto& ch = o.AddChoice("Display", "menu_chord", "Menu button", &g_cfg.menuChord, { "l3r3", "ltrt", "none" },
+                           "Controller combination that opens this menu when held (Insert always works).", [] { ApplyMenuInput(); });
+    ch.choiceLabels = { "L3 + R3", "LT + RT", "Keyboard only" };
+    o.AddBool("Display", "menu_chord_pass", "Menu button reaches game", &g_cfg.menuChordPass,
+              "On: a short press still does the game's action (L3 + R3 = party skill); only holding opens the menu.", [] { ApplyMenuInput(); });
+    o.AddInt("Display", "menu_hold_ms", "Menu hold time (ms)", &g_cfg.menuHoldMs, 100, 3000, 100,
+             "How long the menu button must be held.", [] { ApplyMenuInput(); });
     o.AddFloat("Display", "menu_distance", "Menu distance (m)", &g_cfg.menuDistance, 0.3f, 5.f, 0.1f, 1,
                "How far away this menu floats.");
     o.AddFloat("Display", "menu_size", "Menu width (m)", &g_cfg.menuSize, 0.2f, 5.f, 0.05f, 2,
@@ -110,10 +128,7 @@ void MenuOptions_Init(ID3D11Device* dev, ID3D11DeviceContext* imm) {
         char* nl = strchr(perf, '\n'); if (nl) *nl = 0;   // first line: fps and frame time
         return std::string(perf);
     };
-    s.input.chordHoldMs = g_cfg.menuHoldMs;
-    s.input.chordButtons = g_cfg.menuChord == "l3r3" ? (0x0040 | 0x0080) : 0;   // XINPUT_GAMEPAD_LEFT_THUMB | RIGHT_THUMB
-    s.input.chordTriggers = g_cfg.menuChord == "ltrt";
-    s.input.keyboardToggleVk = g_cfg.menuKey;
+    s.input = MenuInput();
     if (!vrkit::menu::Init(dev, imm, s)) LOGE("Settings menu: init failed (menu unavailable)");
-    else LOGI("Settings menu ready: hold %s %d ms%s", g_cfg.menuChord == "l3r3" ? "L3+R3" : g_cfg.menuChord == "ltrt" ? "LT+RT" : "(no pad chord)", g_cfg.menuHoldMs, g_cfg.menuKey ? " or press menu_key" : "");
+    else LOGI("Settings menu ready: hold %s %d ms (%s)%s", g_cfg.menuChord == "l3r3" ? "L3+R3" : g_cfg.menuChord == "ltrt" ? "LT+RT" : "(no pad chord)", g_cfg.menuHoldMs, g_cfg.menuChordPass ? "game also sees it" : "hidden from the game", g_cfg.menuKey ? " or press menu_key" : "");
 }

@@ -91,13 +91,17 @@ static const char* kDefaultConfig =
 "\n"
 "# In-game settings menu: hold menu_chord for menu_hold_ms, or press menu_key. menu_chord:\n"
 "#   l3r3 = click both sticks in (default)   ltrt = both triggers   none = keyboard only\n"
+"# menu_chord_pass: true = the game still receives the chord (L3 + R3 is the game's party skill), so a\n"
+"#   short press works in the game and only holding it for menu_hold_ms opens the menu; false = the chord is\n"
+"#   hidden from the game while held.\n"
 "# menu_key: insert, home, end, pause, scrolllock, F1-F12 or none.\n"
 "# In the menu: D-pad / left stick to move and change,\n"
 "# A = toggle, Y = undo (value at start), LB / RB = page, B = close. Keyboard: arrows, Enter, Delete, PgUp / PgDn,\n"
 "# Backspace. Changes apply right away; this file is updated when the menu closes.\n"
 "# menu_distance / menu_size: panel distance and width in metres.\n"
 "menu_chord = l3r3\n"
-"menu_hold_ms = 300\n"
+"menu_chord_pass = true\n"
+"menu_hold_ms = 500\n"
 "menu_key = insert\n"
 "menu_distance = 1.0\n"
 "menu_size = 0.9\n"
@@ -242,6 +246,7 @@ bool LoadConfig(const std::wstring& path, Config& cfg) {
         else if (key == "desktop_vsync") { if (lval == "true" || lval == "1") cfg.desktopVsync = true; else if (lval == "false" || lval == "0") cfg.desktopVsync = false; else ok = false; }
         else if (key == "debug_skip_ps") cfg.debugSkipPs = val;
         else if (key == "menu_chord") { if (lval == "l3r3" || lval == "ltrt" || lval == "none") cfg.menuChord = lval; else ok = false; }
+        else if (key == "menu_chord_pass") { if (lval == "true" || lval == "1") cfg.menuChordPass = true; else if (lval == "false" || lval == "0") cfg.menuChordPass = false; else ok = false; }
         else if (key == "menu_hold_ms") { int v = atoi(val.c_str()); ok = v >= 100 && v <= 5000; if (ok) cfg.menuHoldMs = v; }
         else if (key == "menu_distance") ok = ParseFloat(val, cfg.menuDistance, 0.3f, 5.f);
         else if (key == "menu_size") ok = ParseFloat(val, cfg.menuSize, 0.2f, 5.f);

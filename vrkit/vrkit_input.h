@@ -20,6 +20,11 @@ struct Settings {
     // or in addition.
     unsigned short chordButtons = 0x0040 | 0x0080;   // XINPUT_GAMEPAD_LEFT_THUMB | XINPUT_GAMEPAD_RIGHT_THUMB
     bool chordTriggers = false;
+    // false (default): while all chord buttons are held together the game doesn't see them, so opening the
+    // menu never sets off the game's own action on that combination. true: the game sees the combination
+    // normally until the hold time is reached and the menu opens (use when the game has its own action on it,
+    // e.g. Granblue's L3 + R3 party skill; the player just doesn't hold it mid-battle).
+    bool chordPassThrough = false;
     int chordHoldMs = 300;
     int keyboardToggleVk = 0x2D;// VK_INSERT
     float triggerThreshold = 0.6f;

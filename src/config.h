@@ -32,7 +32,8 @@ struct Config {
     bool showStats = false;
     // in-game settings menu (vrkit): hold the menu_chord buttons menu_hold_ms or press menu_key
     std::string menuChord = "l3r3";  // l3r3 (both stick clicks) | ltrt (both triggers) | none
-    int menuHoldMs = 300;
+    int menuHoldMs = 500;
+    bool menuChordPass = true;       // the game still sees the chord until the hold time (Granblue: L3+R3 = party skill)
     int menuKey = 0x2D;              // VK_INSERT
     float menuDistance = 1.0f;       // metres in front of the eyes
     float menuSize = 0.9f;           // panel width in metres
