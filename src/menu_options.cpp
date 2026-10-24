@@ -91,6 +91,8 @@ void Register() {
 
     // ---- View
     o.AddBool("View", "head_tracking", "Head tracking", &g_cfg.headTracking, "Apply the headset pose to the game camera.");
+    o.AddBool("View", "decoupled_pitch", "Decoupled pitch", &g_cfg.decoupledPitch,
+              "Keeps the horizon level: the right stick moves the camera up and down without tilting the view. Look up and down with your head.");
     o.AddFloat("View", "world_scale", "World scale", &g_cfg.worldScale, 0.1f, 10.f, 0.05f, 2,
                "Game units per metre: higher = the world feels smaller.");
     o.AddBool("View", "fix_cull_fov", "Edge culling fix", &g_cfg.fixCullFov,

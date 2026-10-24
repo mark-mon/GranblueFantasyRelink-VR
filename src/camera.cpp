@@ -366,6 +366,16 @@ void ApplyPose(const float* eye, const float* target, const float* up, const Pos
     V3 fd = T - E;
     float dist = Len(fd);
     V3 f = Norm(fd);
+    if (g_cfg.decoupledPitch) {
+        // Decoupled pitch: keep the game camera's position (it still rises and falls as the right stick orbits it)
+        // and its heading, but drop its pitch and roll, so the horizon stays level and you look up / down with
+        // your head only. The game's world is Y-up.
+        static V3 lastFlat{ 0, 0, -1 };
+        V3 W{ 0, 1, 0 };
+        V3 fh = f - W * (f.x * W.x + f.y * W.y + f.z * W.z);
+        if (Len(fh) > 1e-3f) lastFlat = Norm(fh);   // looking straight up / down: keep the last heading
+        f = lastFlat; U = W;
+    }
     V3 r = Norm(Cross(f, U));
     V3 u = Cross(r, f);
     float s = g_cfg.worldScale;
