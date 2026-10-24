@@ -500,7 +500,25 @@ using CamUpdateFn = void(__fastcall*)(uintptr_t);
 CamUpdateFn oCamUpdate = nullptr;
 volatile LONG g_camFovFixes = 0;
 
+// The camera object's own vertical FOV (cam+0x138, 50 deg) is used by a second visibility test besides the view
+// fields fixed below: with the head turned, buildings / props near the edge of the headset view (e.g. a chimney 60 deg
+// to the side) were not drawn even with fix_cull_fov. While stereo runs, the camera gets our FOV (incl. cull margin)
+// before its update; the game's value is restored when stereo stops.
+// Trigger "camfov=<deg>": 0 = automatic (this), > 0 = that FOV, < 0 = leave the camera alone (comparison).
+float g_camFovOverride = 0.f;
+uintptr_t g_fovCam = 0; float g_camGameFov = 0.f; bool g_camFovSet = false;
 void __fastcall hkCamUpdate(uintptr_t cam) {
+    if (cam && g_fovOverridden && g_cfg.fixCullFov && g_camFovOverride >= 0.f && g_ourFov > 0.f) {
+        float* pf = (float*)(cam + 0x138);
+        float want = g_camFovOverride > 0.f ? g_camFovOverride : g_ourFov;
+        if (*pf != want) {
+            static int lg = 0;
+            if (lg < 3) { ++lg; LOGI("Camera: camera FOV %.1f -> %.1f deg (culling)", *pf * 57.2958f, want * 57.2958f); }
+            if (!g_camFovSet || cam != g_fovCam) { g_camGameFov = *pf; g_fovCam = cam; g_camFovSet = true; }
+            else if (*pf > 0.1f && *pf < 3.0f && *pf != g_camGameFov) g_camGameFov = *pf;   // the game changed it (zoom etc.)
+            *pf = want;
+        }
+    }
     oCamUpdate(cam);
     if (!g_fovOverridden || !g_cfg.fixCullFov || !cam) return;
     uintptr_t view = *(volatile uintptr_t*)(cam + 0x60);
@@ -515,6 +533,7 @@ static void NoteOurFov(uintptr_t view) { g_ourAspect = *(float*)(view + 0x9d0); 
 static void RestoreGameFov() {
     if (!g_fovOverridden) return;
     g_fovOverridden = false;
+    if (g_camFovSet && g_fovCam) { *(float*)(g_fovCam + 0x138) = g_camGameFov; g_camFovSet = false; }
     if (g_fovView && *(float*)(g_fovView + 0x9d0) == g_ourAspect && *(float*)(g_fovView + 0x9d4) == g_ourFov) {
         *(float*)(g_fovView + 0x9d0) = g_gameAspect; *(float*)(g_fovView + 0x9d4) = g_gameFov;
     }
@@ -890,4 +909,5 @@ static void SyncListParity() {
     *(volatile int*)(g_base + 0x718c8f8) = *(volatile int*)(g_base + 0x7ba4d20) ^ 1;
 }
 
+void Camera_SetFovOverride(float rad) { g_camFovOverride = rad; }
 LONG Camera_TakeFovFixes() { return InterlockedExchange(&g_camFovFixes, 0); }

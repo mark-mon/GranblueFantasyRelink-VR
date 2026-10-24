@@ -157,6 +157,8 @@ void Passes_OnShaderCreated(void* shader, char kind, const void* code, SIZE_T le
     if (g_cfg.debugDumpShaders) dump::Add(h, kind, code, len);
     PostFx_OnShaderCreated(shader, h);
 }
+// all known shader objects with their hashes (for re-applying hash-based rules at runtime)
+void Passes_ForEachShader(void (*fn)(void* shader, uint64_t hash)) { std::lock_guard<std::mutex> lk(g_mx); for (auto& kv : g_shaders) fn(kv.first, kv.second.hash); }
 uint64_t Passes_ShaderHash(void* shader) { std::lock_guard<std::mutex> lk(g_mx); return HashOf(shader); }
 size_t Passes_ShaderCount() { std::lock_guard<std::mutex> lk(g_mx); return g_shaders.size(); }
 

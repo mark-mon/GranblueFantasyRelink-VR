@@ -20,6 +20,7 @@ void Vrs_SetActive(bool on);
 void Vrs_ConfigChanged();
 void PostFx_AaFromConfig();
 void PostFx_TaaChanged();
+void PostFx_SkipConfigChanged();
 const char* PostFx_AaValue();
 
 namespace {
@@ -60,6 +61,8 @@ void Register() {
               "On: a short press still does the game's action (L3 + R3 = party skill); only holding opens the menu.", [] { ApplyMenuInput(); });
     o.AddInt("Display", "menu_hold_ms", "Menu hold time (ms)", &g_cfg.menuHoldMs, 100, 3000, 100,
              "How long the menu button must be held.", [] { ApplyMenuInput(); });
+    o.AddBool("Display", "hud_blur_backdrop", "HUD frosted backdrops", &g_cfg.hudBlurBackdrop,
+              "The game's blurred panel backgrounds. They show a misplaced piece of the scene in VR.", [] { PostFx_SkipConfigChanged(); });
     o.AddFloat("Display", "menu_distance", "Menu distance (m)", &g_cfg.menuDistance, 0.3f, 5.f, 0.1f, 1,
                "How far away this menu floats.");
     o.AddFloat("Display", "menu_size", "Menu width (m)", &g_cfg.menuSize, 0.2f, 5.f, 0.05f, 2,

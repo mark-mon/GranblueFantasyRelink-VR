@@ -17,7 +17,8 @@ Version **1.0.1**. Unofficial fan mod, not affiliated with or endorsed by Cygame
   your eyes.
 - **Anti-aliasing choices.** The game's TAA is quite soft in VR. You can pick off (sharpest), FXAA, a mild TAA with
   adjustable strength, or the game's own TAA.
-- **Edge culling fix.** Objects at the edge of your view no longer pop in and out when you turn your head.
+- **Edge culling fix.** Buildings, props and NPCs at the sides of your view are drawn even when you turn your head
+  far away from where the game camera points.
 - **In-game settings menu.** Hold both sticks clicked in (L3 + R3) for half a second, or press Insert. Changes apply live and are saved to
   `config.txt`.
 - **Stats panel** (F7) with fps and CPU / GPU frame times.
@@ -79,6 +80,8 @@ Everything is documented in `config.txt`, and most of it can be changed from the
   the full-rate area.
 - `hud_distance`, `hud_size`, `menu_distance`, `menu_size`: panel placement in metres.
 - `world_scale`: how big the world feels (game units per metre).
+- `hud_blur_backdrop`: the game's frosted-glass panel backgrounds. Off by default, because in VR they show a misplaced
+  piece of the scene behind HUD panels.
 - `disable_color_grading`: turns off the game's depth-based colour grading for a flatter, lighter image.
 
 ## Known limitations

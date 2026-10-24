@@ -65,3 +65,20 @@ Per-frame data is produced once per game frame, outside render-frame:
 - **Edge popping:** props/NPCs/parts of buildings vanished near the view edges while turning the head; independent of the render frustum (fov_overscan up to 30 deg changed nothing) and of +0x9d0/+0x9d4 set at render-frame (cull_margin -25..40: draw count unchanged). Cause: the game camera update exe+0x68cb00 (`void(cam)`, view = *(cam+0x60)) copies the camera's own vertical FOV (cam+0x138, 50 deg, aspect 16:9) into view+0x9d4 every update; culling during the update then uses that narrow cone with our head-turned view. Fix: hook 0x68cb00 (prologue signature checked) and write our aspect/FOV back into the view after it (game values kept for restore). Town: 1450 -> ~1800 draws per frame.
 - **VRS (vrs.cpp):** NVAPI via nvapi_QueryInterface (CreateShadingRateResourceView 0x99ca2dff, RSSetShadingRateResourceView 0x1b0c2f83, RSSetViewportsPixelShadingRates 0x34f7938f). Works on the game's deferred contexts (0 errors) and through the eye-2 replay. Enabled on deferred OMSetRenderTargets when RT0 is render-size and a DSV is bound; disabled otherwise. Rings: inner 0.35 full, to 0.70 2x2, outside 4x4 -> GPU 22.3 -> 19.8 ms per frame (test PC). Lighting is a compute shader (6c50), not affected.
 - fov_overscan default 0 (kept as an option).
+
+
+## 1.0.1: second culling path, HUD backdrop, depth of field (2026-10-23)
+- **Edge culling, part 2:** with fix_cull_fov on, objects 60 deg to the side were still missing (debug_head_yaw = 60 in
+  the town start position: a chimney whose smoke was drawn but the chimney itself was not). cull_margin up to 30 deg
+  changed nothing. The camera object's own vertical FOV (cam+0x138, 50 deg) feeds a second visibility test. Writing our
+  FOV (incl. margin, ~102 deg) into cam+0x138 before the camera update (exe+0x68cb00) brings the chimney back; restored
+  when stereo stops. Part of fix_cull_fov. Trigger `camfov=<deg>` (0 auto, > 0 fixed, < 0 leave the camera alone) and
+  `yaw=<deg>` for A/B tests; draw counts are too noisy for this (NPCs move), compare eye dumps instead.
+- **HUD frosted backdrops:** the UI copies the screen target (scene + UI so far) to a small texture (e5d46dfbe7a817e7),
+  blurs it (3b58f6b490180ea6 / 2afd3e011b02e4e6, cbUIGauss) and pastes it behind panels through a mask
+  (e24514aebdeabacb). On the VR HUD panel that paste shows a misplaced piece of the scene (user video: a rectangle
+  under the location name in battle). hud_blur_backdrop = false (default) skips the masked paste.
+- **Depth of field:** compute shaders 7eb0fb99087d7a98 / c201b84553cc07e7 (ParamBuffer: focalDistance_, focusScale_,
+  blurSizeMax_ ...; writes g_DofTexture / g_DofMediumDist, also reads the bloom chain). Not dispatched in town,
+  menus or the party screen; needs a scene that uses it (cutscene / dialogue) to find the consumer and build a
+  disable option. Found with debug_dump_shaders (GranblueVR_allshaders\index.txt).

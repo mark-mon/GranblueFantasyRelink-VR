@@ -1493,6 +1493,9 @@ void VR_OnPresent(IDXGISwapChain* sc) {
             else if (!strcmp(cmd, "passes")) Passes_Start();
             else if (!strncmp(cmd, "cull=", 5)) { g_cfg.cullMarginDeg = (float)atof(cmd + 5); LOGI("cull_margin -> %.1f", g_cfg.cullMarginDeg); }
             else if (!strncmp(cmd, "cullfix=", 8)) { g_cfg.fixCullFov = cmd[8] == '1'; LOGI("fix_cull_fov -> %d", (int)g_cfg.fixCullFov); }
+            else if (!strncmp(cmd, "skipps=", 7)) { void PostFx_SetSkipList(const char*); PostFx_SetSkipList(cmd + 7); }
+            else if (!strncmp(cmd, "yaw=", 4)) { g_cfg.debugHeadYaw = (float)atof(cmd + 4); LOGI("debug_head_yaw -> %.1f", g_cfg.debugHeadYaw); }
+            else if (!strncmp(cmd, "camfov=", 7)) { void Camera_SetFovOverride(float); float d = (float)atof(cmd + 7); Camera_SetFovOverride(d * 0.0174533f); LOGI("camera fov override -> %.1f deg", d); }
             else if (!strncmp(cmd, "quad=", 5)) { Quad_Active(); g_quadOn = cmd[5] == '1'; LOGI("Quad views -> %d", (int)g_quadOn); }
             else if (!strncmp(cmd, "vrs=", 4)) { Vrs_SetActive(cmd[4] == '1'); LOGI("VRS -> %d", (int)Vrs_Active()); }
             else if (!strncmp(cmd, "scanres", 7)) {

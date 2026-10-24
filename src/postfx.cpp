@@ -147,6 +147,10 @@ struct SkipCtx { ID3D11DeviceContext* c; bool skip; };
 SkipCtx g_skipCtx[64]; volatile LONG g_nSkipCtx = 0;
 std::mutex g_skipMx;
 std::vector<uint64_t> g_skipHashes; bool g_skipParsed = false;
+// HUD "frosted glass" panel backdrop: the UI copies the screen (scene included), blurs it (cbUIGauss) and pastes it
+// behind panels through a mask. On the VR HUD panel that pasted scene no longer lines up with the world behind it.
+// This is the masked paste (g_ColorTexture + g_MaskTexture, discard where mask == 0).
+const uint64_t kHudBackdropPs = 0xe24514aebdeabacbull;
 std::unordered_map<void*, bool> g_skipShader;   // shader -> skip (filled at creation)
 volatile LONG g_skipped = 0;
 volatile bool g_anySkip = false;
@@ -155,7 +159,8 @@ void ParseSkip() {
     g_skipParsed = true;
     const char* p = g_cfg.debugSkipPs.c_str();
     while (*p) { char* e = nullptr; unsigned long long h = _strtoui64(p, &e, 16); if (e == p) { ++p; continue; } if (h) g_skipHashes.push_back(h); p = e; }
-    if (!g_skipHashes.empty()) LOGI("PostFx: skipping draws of %zu pixel shaders (debug_skip_ps)", g_skipHashes.size());
+    if (!g_cfg.hudBlurBackdrop) g_skipHashes.push_back(kHudBackdropPs);
+    if (!g_skipHashes.empty()) LOGI("PostFx: skipping draws of %zu pixel shaders (debug_skip_ps%s)", g_skipHashes.size(), g_cfg.hudBlurBackdrop ? "" : ", HUD frosted backdrop");
 }
 SkipCtx* SkipSlot(ID3D11DeviceContext* c) {
     LONG n = g_nSkipCtx;
@@ -172,6 +177,23 @@ void PostFx_SkipCheckCreated(void* shader, uint64_t hash) {
     std::lock_guard<std::mutex> lk(g_skipMx);
     ParseSkip();
     for (auto h : g_skipHashes) if (h == hash) { g_skipShader[shader] = true; g_anySkip = true; LOGI("PostFx: found shader %016llx to skip", (unsigned long long)hash); }
+}
+// trigger "skipps=<hash>,<hash>": replace the skip list at runtime (empty = skip nothing)
+void Passes_ForEachShader(void (*fn)(void* shader, uint64_t hash));
+void PostFx_SetSkipList(const char* list) {
+    {
+        std::lock_guard<std::mutex> lk(g_skipMx);
+        g_skipParsed = true; g_skipHashes.clear(); g_skipShader.clear();
+        for (const char* p = list; *p; ) { char* e = nullptr; unsigned long long h = _strtoui64(p, &e, 16); if (e == p) { ++p; continue; } if (h) g_skipHashes.push_back(h); p = e; }
+        if (!g_cfg.hudBlurBackdrop) g_skipHashes.push_back(kHudBackdropPs);
+    }
+    Passes_ForEachShader([](void* sh, uint64_t h) {
+        std::lock_guard<std::mutex> lk(g_skipMx);
+        for (auto x : g_skipHashes) if (x == h) g_skipShader[sh] = true;
+    });
+    std::lock_guard<std::mutex> lk(g_skipMx);
+    g_anySkip = !g_skipShader.empty();
+    LOGI("PostFx: skip list -> %zu hashes, %zu shader objects", g_skipHashes.size(), g_skipShader.size());
 }
 // deferred-context draw: true = drop it
 volatile LONG g_drawCount = 0;   // deferred-context draws (diagnostics: culling experiments)
@@ -228,3 +250,6 @@ void PostFx_AaFromConfig() { g_aa = -1; LOGI("Anti-aliasing: %s", kAaName[AaMode
 // taa_strength changed: recompile the mild TAA shader on next use. The old shader object is leaked on
 // purpose (a deferred command list recorded this frame may still reference it); it is small.
 void PostFx_TaaChanged() { g_aaRepl[AA_TAA] = nullptr; g_aaFailed[AA_TAA] = false; }
+
+// settings menu: hud_blur_backdrop changed
+void PostFx_SkipConfigChanged() { PostFx_SetSkipList(g_cfg.debugSkipPs.c_str()); }
