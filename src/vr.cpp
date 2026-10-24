@@ -81,7 +81,8 @@ struct VR {
     bool hudDstLinear = true;
     std::vector<ID3D11RenderTargetView*> hudRtv;
     bool hudReady = false;          // HUD image for the current stereo frame
-    uint64_t hudFrames = 0, hudMissing = 0, monoFrames = 0, switches = 0;   // diagnostics (per log interval)
+    uint64_t hudFrames = 0, hudMissing = 0, monoFrames = 0, switches = 0;
+    DWORD flatHoldUntil = 0, switchWindowStart = 0; int switchesInWindow = 0;   // diagnostics (per log interval)
     bool lastStereo = false, lastUiMissing = false;
     bool needRecenter = true;
     // head-tracking reference (set on recenter): yaw-only orientation + position
@@ -873,9 +874,24 @@ static bool EnsureEyeSwapchains(const D3D11_TEXTURE2D_DESC& bb) {
     return true;
 }
 
+bool Movie_Playing(); void Movie_Install();
 bool VR_StereoWanted() {
     if (g_cfg.debugNoXr) return g_cfg.vrMode == "stereo" && g.target;
+    if (Movie_Playing()) return false;                       // pre-rendered movie: theater mode
+    if (GetTickCount() < g.flatHoldUntil) return false;      // flicker guard (see NoteStereoSwitch)
     return g_cfg.vrMode == "stereo" && !g.disabled && g.sess && g.running && g.local;
+}
+// Stereo and theater frames alternating rapidly (e.g. a movie or screen the game presents between render-frames)
+// flickers between the flat screen and full-view images: after 4 switches within a second, hold theater mode
+// for 2 seconds, then try again.
+static void NoteStereoSwitch() {
+    ++g.switches;
+    DWORD now = GetTickCount();
+    if (now - g.switchWindowStart > 1000) { g.switchWindowStart = now; g.switchesInWindow = 0; }
+    if (++g.switchesInWindow >= 4) {
+        g.flatHoldUntil = now + 2000; g.switchesInWindow = 0;
+        static int lg = 0; if (lg < 10) { ++lg; LOGI("Stereo/theater flicker detected: holding theater mode for 2 s"); }
+    }
 }
 
 static Pose RelPose(const XrPosef& p) {
@@ -1416,7 +1432,7 @@ static void PresentReplay() {
                 LONG ui = Hud_TakeUiCount();
                 ++g.hudFrames; if (ui == 0) ++g.hudMissing;
                 g.lastUiMissing = ui == 0;
-                if (!g.lastStereo) { ++g.switches; g.lastStereo = true; }
+                if (!g.lastStereo) { NoteStereoSwitch(); g.lastStereo = true; }
                 g.hudReady = !g_cfg.debugNoXr && BlitHud();
                 static int hl = 0;
                 if (hl < 5) { ++hl; LOGD("HUD: frame UI passes %ld, layer %s", ui, g.hudReady ? "submitted" : "not submitted"); }
@@ -1444,7 +1460,7 @@ static void PresentReplay() {
     }
     ++g.monoFrames;
     Hud_FrameReset(false);
-    if (g.lastStereo) { ++g.switches; g.lastStereo = false; }
+    if (g.lastStereo) { NoteStereoSwitch(); g.lastStereo = false; }
     Temporal_Reset();
 }
 static DWORD WINAPI hkWaitEx(HANDLE h, DWORD ms, BOOL alertable) {
@@ -1495,11 +1511,12 @@ void VR_OnPresent(IDXGISwapChain* sc) {
         g.target = sc;
         LOGI("Following game swapchain %p", (void*)sc);
         if (!InitD3D(sc)) return;
-        if (!g.cameraHooked) { g.cameraHooked = true; Camera_Install(); Trace_Install(); }
+        if (!g.cameraHooked) { g.cameraHooked = true; Camera_Install(); Trace_Install(); Movie_Install(); }
     }
     if (sc != g.target) return;
     if (Camera_InEye0Present()) { MapLog_Marker('E', 0); if (g.stFrameBegun) VR_StereoCaptureEye(0); return; }
     ++g.frames;
+    if ((g.frames % 300) == 0) Movie_Install();   // the Bink DLL may be loaded late
     { static int pl = 0; if (g.stFrameBegun && pl < 8) { ++pl; LOGD("Present (stereo frame) execs %llu", Discovery_ExecCount()); } }
     if ((g.frames & 63) == 1) { DXGI_SWAP_CHAIN_DESC sd; if (SUCCEEDED(sc->GetDesc(&sd))) Discovery_SetScreen(sd.BufferDesc.Width, sd.BufferDesc.Height); }
     // File trigger for automation: write a command word into GranblueVR.trigger next to the DLL.
