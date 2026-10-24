@@ -244,6 +244,7 @@ bool LoadConfig(const std::wstring& path, Config& cfg) {
             if (ok) (key == "scale_down_key" ? cfg.scaleDownKey : key == "scale_up_key" ? cfg.scaleUpKey : key == "stats_key" ? cfg.statsKey : key == "screenshot_key" ? cfg.screenshotKey : key == "vrs_key" ? cfg.vrsKey : key == "quad_key" ? cfg.quadKey : key == "eye_tracking_key" ? cfg.eyeTrackingKey : key == "aa_key" ? cfg.aaKey : cfg.captureKey) = vk;
         }
         else if (key == "desktop_vsync") { if (lval == "true" || lval == "1") cfg.desktopVsync = true; else if (lval == "false" || lval == "0") cfg.desktopVsync = false; else ok = false; }
+        else if (key == "debug_dump_shaders") { if (lval == "true" || lval == "1") cfg.debugDumpShaders = true; else if (lval == "false" || lval == "0") cfg.debugDumpShaders = false; else ok = false; }
         else if (key == "debug_skip_ps") cfg.debugSkipPs = val;
         else if (key == "menu_chord") { if (lval == "l3r3" || lval == "ltrt" || lval == "none") cfg.menuChord = lval; else ok = false; }
         else if (key == "menu_chord_pass") { if (lval == "true" || lval == "1") cfg.menuChordPass = true; else if (lval == "false" || lval == "0") cfg.menuChordPass = false; else ok = false; }

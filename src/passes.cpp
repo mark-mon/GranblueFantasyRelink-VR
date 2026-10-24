@@ -10,6 +10,11 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <deque>
+#include <thread>
+#include <condition_variable>
+#include <d3dcompiler.h>
 #include <cstdio>
 #include <cstdint>
 #include "log.h"
@@ -77,6 +82,69 @@ void List(std::string& s, const char* tag, ID3D11View* const* v, int n) {
 }
 } // namespace
 
+// ---- debug_dump_shaders: every distinct pixel / compute shader the game creates is disassembled on a background
+// thread into GranblueVR_allshaders\<hash>.<ps|cs>.txt, and listed in GranblueVR_allshaders\index.txt with its
+// constant-buffer and resource names (one line per shader, for searching: e.g. "Dof", "Bokeh", "Gauss").
+namespace dump {
+std::mutex mx; std::condition_variable cv;
+struct Job { uint64_t hash; char kind; std::vector<uint8_t> code; };
+std::deque<Job> queue; std::unordered_set<uint64_t> seen;
+bool started = false; size_t written = 0;
+using DisasmFn = HRESULT(WINAPI*)(const void*, SIZE_T, UINT, const char*, ID3DBlob**);
+// names from the disassembly's comment header: "// cbuffer Name" and the resource-binding table
+std::string Names(const char* t) {
+    std::string out; bool inBind = false;
+    for (const char* line = t; line && *line; ) {
+        const char* e = strchr(line, '\n'); size_t n = e ? (size_t)(e - line) : strlen(line);
+        std::string l(line, n); if (!l.empty() && l.back() == '\r') l.pop_back();
+        if (l.rfind("// cbuffer ", 0) == 0) out += " cb:" + l.substr(11);
+        else if (l.find("// Name ") == 0 && l.find("Type") != std::string::npos) inBind = true;
+        else if (inBind) {
+            if (l.size() < 4 || l.rfind("//", 0) != 0) inBind = false;
+            else if (l[3] != '-' && l[3] != ' ') {
+                size_t sp = l.find(' ', 3);
+                std::string name = l.substr(3, sp == std::string::npos ? std::string::npos : sp - 3);
+                if (!name.empty()) out += " " + name;
+            } else if (l.size() > 3 && l[3] == ' ') inBind = false;
+        }
+        if (l.rfind("ps_", 0) == 0 || l.rfind("cs_", 0) == 0) break;   // end of the header
+        line = e ? e + 1 : nullptr;
+    }
+    return out;
+}
+void Worker() {
+    HMODULE dc = LoadLibraryW(L"d3dcompiler_47.dll");
+    DisasmFn dis = dc ? (DisasmFn)GetProcAddress(dc, "D3DDisassemble") : nullptr;
+    std::wstring dir = g_modDir + L"GranblueVR_allshaders\\";
+    CreateDirectoryW(dir.c_str(), nullptr);
+    FILE* idx = _wfopen((dir + L"index.txt").c_str(), L"ab");
+    if (idx) { fprintf(idx, "# hash stage bytes | constant buffers (cb:) and resources\r\n"); fflush(idx); }
+    for (;;) {
+        Job j;
+        { std::unique_lock<std::mutex> lk(mx); cv.wait(lk, [] { return !queue.empty(); }); j = std::move(queue.front()); queue.pop_front(); }
+        char name[64]; snprintf(name, sizeof(name), "%016llx.%s", (unsigned long long)j.hash, j.kind == 'C' ? "cs" : "ps");
+        std::string names;
+        ID3DBlob* blob = nullptr;
+        if (dis && SUCCEEDED(dis(j.code.data(), j.code.size(), 0, nullptr, &blob)) && blob) {
+            const char* t = (const char*)blob->GetBufferPointer();
+            names = Names(t);
+            FILE* f = _wfopen((dir + std::wstring(name, name + strlen(name)) + L".txt").c_str(), L"wb");
+            if (f) { fwrite(t, 1, blob->GetBufferSize() > 0 ? blob->GetBufferSize() - 1 : 0, f); fclose(f); }
+            blob->Release();
+        }
+        if (idx) { fprintf(idx, "%016llx %s %zu |%s\r\n", (unsigned long long)j.hash, j.kind == 'C' ? "cs" : "ps", j.code.size(), names.c_str()); fflush(idx); }
+        if (++written % 250 == 0) LOGI("Shader dump: %zu shaders written to GranblueVR_allshaders", written);
+    }
+}
+void Add(uint64_t hash, char kind, const void* code, SIZE_T len) {
+    std::lock_guard<std::mutex> lk(mx);
+    if (!seen.insert(hash).second) return;
+    if (!started) { started = true; std::thread(Worker).detach(); LOGI("Shader dump: on (debug_dump_shaders) -> GranblueVR_allshaders\\index.txt"); }
+    queue.push_back({ hash, kind, std::vector<uint8_t>((const uint8_t*)code, (const uint8_t*)code + len) });
+    cv.notify_one();
+}
+} // namespace dump
+
 void PostFx_OnShaderCreated(void* shader, uint64_t hash);
 // ---- device hooks (installed from hooks.cpp on the shared device vtable)
 void Passes_OnShaderCreated(void* shader, char kind, const void* code, SIZE_T len) {
@@ -86,6 +154,7 @@ void Passes_OnShaderCreated(void* shader, char kind, const void* code, SIZE_T le
     if (g_codeBytes < (256u << 20)) { si.code.assign((const uint8_t*)code, (const uint8_t*)code + len); g_codeBytes += len; }
     uint64_t h = si.hash;
     g_shaders[shader] = std::move(si);
+    if (g_cfg.debugDumpShaders) dump::Add(h, kind, code, len);
     PostFx_OnShaderCreated(shader, h);
 }
 uint64_t Passes_ShaderHash(void* shader) { std::lock_guard<std::mutex> lk(g_mx); return HashOf(shader); }

@@ -62,6 +62,7 @@ struct Config {
     float debugFovSkew = 0.f, debugFovVSkew = 0.f;
     int debugStereo = 8192;   // single render-frame + command-list replay of eye 1 at Present
     std::string renderdocPath;
+    bool debugDumpShaders = false;   // hidden: disassemble every pixel/compute shader the game creates into GranblueVR_allshaders\\ (+ index.txt)
     bool debugNoXr = false;          // hidden: stereo rendering without an OpenXR session (diagnostics/captures)       // hidden: load this renderdoc.dll at startup (frame captures via trigger "rdcapture")             // hidden: 1 no per-eye camera, 2 pose only (no projection), 3 no history restore      // >0: fake head sway amplitude in degrees (testing without a headset)
     std::vector<std::string> messages;  // parse warnings, logged after the log opens
     bool createdDefault = false;
