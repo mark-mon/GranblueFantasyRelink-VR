@@ -106,6 +106,11 @@ void Register() {
                "Game units per metre: higher = the world feels smaller.");
     o.AddBool("View", "fix_cull_fov", "Edge culling fix", &g_cfg.fixCullFov,
               "Stops objects popping in and out at the edges of the view.");
+    auto& ec = o.AddChoice("View", "edge_clipping", "Edge clipping", &g_cfg.edgeClipping, { "off", "default", "experimental" },
+                           "Helps textures and objects at the sides of your view stop dropping out when you turn your head. "
+                           "Experimental: best result, but may have unexpected results.");
+    ec.choiceLabels = { "Off", "Default", "Experimental" };
+    ec.visible = [] { return g_cfg.fixCullFov; };
     o.AddBool("View", "desktop_vsync", "Desktop vsync", &g_cfg.desktopVsync,
               "Let the game's vsync limit the frame rate (normally off in VR).");
     o.AddFloat("View", "fov_overscan", "FOV overscan (deg)", &g_cfg.fovOverscan, 0.f, 15.f, 0.5f, 1,

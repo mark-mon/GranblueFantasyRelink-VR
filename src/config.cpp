@@ -41,6 +41,11 @@ static const char* kDefaultConfig =
 "# Stop the game from culling props/NPCs with its own (narrower) camera FOV, which made objects pop in\n"
 "# and out near the edges of the view as you turn your head.\n"
 "fix_cull_fov = true\n"
+"# edge_clipping: how wide the game's own camera looks when it decides what to load and draw. Wider stops\n"
+"# textures and objects at the sides of your view from dropping out while you turn your head.\n"
+"#   off = the headset's field of view   default = very wide   experimental = beyond the camera's normal\n"
+"#   range (best result in testing, but may have unexpected effects). Needs fix_cull_fov = true.\n"
+"edge_clipping = default\n"
 "\n"
 "# HUD: the game's 2D HUD and menus are shown on their own panel that follows your head.\n"
 "hud_layer = true\n"
@@ -222,6 +227,7 @@ bool LoadConfig(const std::wstring& path, Config& cfg) {
         else if (key == "vrs_mid_rate" || key == "vrs_outer_rate") {
             if (lval == "1x1" || lval == "2x1" || lval == "1x2" || lval == "2x2" || lval == "4x2" || lval == "2x4" || lval == "4x4") (key == "vrs_mid_rate" ? cfg.vrsMidRate : cfg.vrsOuterRate) = lval; else ok = false;
         }
+        else if (key == "edge_clipping") { if (lval == "off" || lval == "default" || lval == "experimental") cfg.edgeClipping = lval; else ok = false; }
         else if (key == "fix_cull_fov") { if (lval == "true" || lval == "1") cfg.fixCullFov = true; else if (lval == "false" || lval == "0") cfg.fixCullFov = false; else ok = false; }
         else if (key == "eye_tracking") { if (lval == "true" || lval == "1") cfg.eyeTracking = true; else if (lval == "false" || lval == "0") cfg.eyeTracking = false; else ok = false; }
         else if (key == "vrs_follow_gaze") { if (lval == "true" || lval == "1") cfg.vrsFollowGaze = true; else if (lval == "false" || lval == "0") cfg.vrsFollowGaze = false; else ok = false; }

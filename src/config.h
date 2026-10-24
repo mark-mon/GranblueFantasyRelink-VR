@@ -9,6 +9,7 @@ struct Config {
     std::string vrMode = "stereo";   // stereo (native, both eyes every frame) | flat
     float fovOverscan = 0.0f;
     bool fixCullFov = true;          // keep the game camera update from narrowing the view FOV (edge popping)
+    std::string edgeClipping = "default";   // off (headset FOV) | default (game camera 165 deg) | experimental (200 deg)
     bool vrs = true;                 // NVIDIA variable rate shading (foveated)
     float vrsInner = 0.35f, vrsOuter = 0.70f;   // radii (fraction of half the image width)
     std::string vrsMidRate = "2x2", vrsOuterRate = "4x4";

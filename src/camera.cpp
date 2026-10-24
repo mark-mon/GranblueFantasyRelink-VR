@@ -504,19 +504,25 @@ volatile LONG g_camFovFixes = 0;
 // fields fixed below: with the head turned, buildings / props near the edge of the headset view (e.g. a chimney 60 deg
 // to the side) were not drawn even with fix_cull_fov. While stereo runs, the camera gets our FOV (incl. cull margin)
 // before its update; the game's value is restored when stereo stops.
-// Trigger "camfov=<deg>": 0 = automatic (this), > 0 = that FOV, < 0 = leave the camera alone (comparison).
+// edge_clipping widens it further (user testing: textures at the view edges dropping out while turning the head get
+// much rarer at 165 deg, rarer still at 200). Trigger "camfov=<deg>": 0 = automatic (this), > 0 = that FOV,
+// < 0 = leave the camera alone (comparison).
 float g_camFovOverride = 0.f;
-uintptr_t g_fovCam = 0; float g_camGameFov = 0.f; bool g_camFovSet = false;
+uintptr_t g_fovCam = 0; float g_camGameFov = 0.f, g_camWritten = 0.f; bool g_camFovSet = false;
 void __fastcall hkCamUpdate(uintptr_t cam) {
     if (cam && g_fovOverridden && g_cfg.fixCullFov && g_camFovOverride >= 0.f && g_ourFov > 0.f) {
         float* pf = (float*)(cam + 0x138);
-        float want = g_camFovOverride > 0.f ? g_camFovOverride : g_ourFov;
+        // edge_clipping: the camera's field of view for these checks (vertical; the camera is 16:9, so much wider
+        // horizontally). Values over 180 deg are outside a camera's normal range ("experimental"): the user found
+        // 200 best in testing, 165 nearly as good.
+        float edge = g_cfg.edgeClipping == "experimental" ? 200.f * 0.0174533f : g_cfg.edgeClipping == "default" ? 165.f * 0.0174533f : 0.f;
+        float want = g_camFovOverride > 0.f ? g_camFovOverride : (std::max)(g_ourFov, edge);
         if (*pf != want) {
             static int lg = 0;
             if (lg < 3) { ++lg; LOGI("Camera: camera FOV %.1f -> %.1f deg (culling)", *pf * 57.2958f, want * 57.2958f); }
             if (!g_camFovSet || cam != g_fovCam) { g_camGameFov = *pf; g_fovCam = cam; g_camFovSet = true; }
-            else if (*pf > 0.1f && *pf < 3.0f && *pf != g_camGameFov) g_camGameFov = *pf;   // the game changed it (zoom etc.)
-            *pf = want;
+            else if (*pf != g_camWritten && *pf > 0.1f && *pf < 3.0f && *pf != g_camGameFov) g_camGameFov = *pf;   // the game changed it (zoom etc.)
+            *pf = want; g_camWritten = want;
         }
     }
     oCamUpdate(cam);
