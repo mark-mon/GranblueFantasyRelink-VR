@@ -39,10 +39,14 @@ vrkit::input::Settings MenuInput() {
 }
 void ApplyMenuInput() { vrkit::input::Configure(MenuInput()); }
 // Pad state the game reads: with decoupled pitch + invert, flip the right stick's vertical axis.
+volatile LONG g_padReads = 0, g_padRyMoves = 0, g_padInverted = 0;
 void GamePadHook(void* gp) {
-    if (!g_cfg.decoupledPitch || !g_cfg.invertPitchStick) return;
+    InterlockedIncrement(&g_padReads);
     SHORT& ry = ((XINPUT_GAMEPAD*)gp)->sThumbRY;
+    if (ry > 8000 || ry < -8000) InterlockedIncrement(&g_padRyMoves);
+    if (!g_cfg.decoupledPitch || !g_cfg.invertPitchStick) return;
     ry = ry == -32768 ? 32767 : (SHORT)-ry;
+    InterlockedIncrement(&g_padInverted);
 }
 
 void Register() {
@@ -150,4 +154,10 @@ void MenuOptions_Init(ID3D11Device* dev, ID3D11DeviceContext* imm) {
     vrkit::input::SetGameStateHook(GamePadHook);
     if (!vrkit::menu::Init(dev, imm, s)) LOGE("Settings menu: init failed (menu unavailable)");
     else LOGI("Settings menu ready: hold %s %d ms (%s)%s", g_cfg.menuChord == "l3r3" ? "L3+R3" : g_cfg.menuChord == "ltrt" ? "LT+RT" : "(no pad chord)", g_cfg.menuHoldMs, g_cfg.menuChordPass ? "game also sees it" : "hidden from the game", g_cfg.menuKey ? " or press menu_key" : "");
+}
+
+// diagnostics (10 s log): does the game read the pad through XInput, and does it see the right stick move?
+void MenuOptions_LogPad() {
+    LONG r = InterlockedExchange(&g_padReads, 0), m = InterlockedExchange(&g_padRyMoves, 0), i = InterlockedExchange(&g_padInverted, 0);
+    LOGI("Pad: game XInput reads %ld, right stick up/down seen in %ld, inverted %ld", r, m, i);
 }
