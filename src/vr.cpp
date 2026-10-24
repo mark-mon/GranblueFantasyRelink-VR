@@ -69,7 +69,7 @@ struct VR {
     float baseW = 0, baseH = 0;                     // size at render_scale 1 (before the cap)
     float scale = 0;                                // current render scale (hotkeys), 0 = not set yet
     // settings menu (vrkit)
-    XrSwapchain menuSc = XR_NULL_HANDLE; std::vector<ID3D11Texture2D*> menuImg; UINT menuW = 0, menuH = 0; bool menuReady = false;
+    XrSwapchain menuSc = XR_NULL_HANDLE; std::vector<ID3D11Texture2D*> menuImg; UINT menuW = 0, menuH = 0; bool menuReady = false; unsigned menuOpenFrames = 0, menuLayers = 0, menuReadyAtEnd = 0, menuReadyCount = 0;
     // stats overlay
     XrSwapchain stats = XR_NULL_HANDLE;
     std::vector<ID3D11Texture2D*> statsImg;
@@ -766,7 +766,7 @@ static void RunXrFrame(IDXGISwapChain* sc) {
         quad.size = { g_cfg.screenWidth, g_cfg.screenWidth * (float)g.quadH / (float)g.quadW };
         layers[layerCount++] = (XrCompositionLayerBaseHeader*)&quad;
     }
-    if (fs.shouldRender && g.menuReady && g.menuSc && g.view) { MenuLayer(mq); layers[layerCount++] = (XrCompositionLayerBaseHeader*)&mq; }
+    if (fs.shouldRender && g.menuReady && g.menuSc && g.view) { MenuLayer(mq); layers[layerCount++] = (XrCompositionLayerBaseHeader*)&mq; ++g.menuLayers; }
     XrFrameEndInfo fei = { XR_TYPE_FRAME_END_INFO };
     fei.displayTime = fs.predictedDisplayTime;
     fei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -892,7 +892,8 @@ static bool CreateMenuSwapchain(UINT w, UINT h) {
     XrSwapchainCreateInfo ci = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
     ci.usageFlags = XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
     ci.format = fmt; ci.sampleCount = 1; ci.width = w; ci.height = h; ci.faceCount = 1; ci.arraySize = 1; ci.mipCount = 1;
-    if (XR_FAILED(xrCreateSwapchain(g.sess, &ci, &g.menuSc))) { g.menuSc = XR_NULL_HANDLE; return false; }
+    if (XrResult cr = xrCreateSwapchain(g.sess, &ci, &g.menuSc); XR_FAILED(cr)) { LOGE("Menu: swapchain %ux%u fmt %d failed: %s", w, h, (int)fmt, XrStr(cr)); g.menuSc = XR_NULL_HANDLE; return false; }
+    LOGI("Menu: swapchain %ux%u fmt %d", w, h, (int)fmt);
     uint32_t n = 0;
     xrEnumerateSwapchainImages(g.menuSc, 0, &n, nullptr);
     std::vector<XrSwapchainImageD3D11KHR> imgs(n, { XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR });
@@ -909,16 +910,21 @@ static void DestroyMenuSwapchain() {
 // Present: run the menu (input, navigation, drawing) and copy it into its swapchain while open.
 static void UpdateMenu() {
     g.menuReady = false;
-    if (!vrkit::menu::Update() || !g.sess) return;
+    if (!vrkit::menu::Update()) return;
+    ++g.menuOpenFrames;
+    if (!g.sess) return;
     ID3D11Texture2D* t = vrkit::menu::Texture();
     if (!t) return;
     if (!g.menuSc && !CreateMenuSwapchain(vrkit::menu::Width(), vrkit::menu::Height())) return;
     uint32_t idx = 0;
     XrSwapchainImageAcquireInfo ai = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
-    if (XR_FAILED(xrAcquireSwapchainImage(g.menuSc, &ai, &idx))) return;
+    static int le = 0;
+    if (XrResult ar = xrAcquireSwapchainImage(g.menuSc, &ai, &idx); XR_FAILED(ar)) { if (le < 5) { ++le; LOGE("Menu: acquire %s", XrStr(ar)); } return; }
     XrSwapchainImageWaitInfo wi = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO }; wi.timeout = 100000000;
     XrSwapchainImageReleaseInfo ri = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
-    if (XR_SUCCEEDED(xrWaitSwapchainImage(g.menuSc, &wi)) && idx < g.menuImg.size()) { g.ctx->CopyResource(g.menuImg[idx], t); g.menuReady = true; }
+    XrResult wr = xrWaitSwapchainImage(g.menuSc, &wi);
+    if (XR_SUCCEEDED(wr) && idx < g.menuImg.size()) { g.ctx->CopyResource(g.menuImg[idx], t); g.menuReady = true; ++g.menuReadyCount; }
+    else if (le < 5) { ++le; LOGE("Menu: wait %s, image %u of %zu", XrStr(wr), idx, g.menuImg.size()); }
     xrReleaseSwapchainImage(g.menuSc, &ri);
 }
 static void MenuLayer(XrCompositionLayerQuad& q) {
@@ -1059,6 +1065,7 @@ static void HandleTuning() {
 }
 
 static void StereoEndFrame() {
+    if (g.menuReady) ++g.menuReadyAtEnd;
     if (!g.stFrameBegun) return;
     if (g_cfg.debugNoXr) { g.stFrameBegun = false; for (auto& c : g.stCaptured) c = false; return; }
     XrCompositionLayerProjectionView pv[2] = { { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW }, { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW } };
@@ -1113,7 +1120,7 @@ static void StereoEndFrame() {
             sq.size = { 0.55f, 0.55f * kStatsH / kStatsW };
             layers[n++] = (XrCompositionLayerBaseHeader*)&sq;
         }
-        if (g.menuReady && g.menuSc && g.view) { MenuLayer(mq); layers[n++] = (XrCompositionLayerBaseHeader*)&mq; }
+        if (g.menuReady && g.menuSc && g.view) { MenuLayer(mq); layers[n++] = (XrCompositionLayerBaseHeader*)&mq; ++g.menuLayers; }
     }
     g.hudReady = false;
     XrFrameEndInfo fei = { XR_TYPE_FRAME_END_INFO };
@@ -1576,6 +1583,7 @@ void VR_OnPresent(IDXGISwapChain* sc) {
                      g_eyeTracking ? "on" : "off", g.gazeSamples, g.gazeMisses, atanf(g.gazeTx) * 57.2958f, atanf(g.gazeTy) * 57.2958f);
             g.gazeSamples = g.gazeMisses = 0;
             char perf[512]; if (Perf_Text(perf, sizeof(perf))) { for (char* c = perf; *c; ++c) if (*c == '\n') *c = '|'; LOGI("Perf: render %ux%u | %s", g.autoW, g.autoH, perf); }
+            if (g.menuOpenFrames || g.menuLayers) { LOGI("Menu: open %u frames, copied %u, ready at frame end %u, shown in %u frames (swapchain %s, view space %s, stereo %d)", g.menuOpenFrames, g.menuReadyCount, g.menuReadyAtEnd, g.menuLayers, g.menuSc ? "ok" : "none", g.view ? "ok" : "none", (int)g.stFrameBegun); g.menuOpenFrames = g.menuLayers = g.menuReadyAtEnd = g.menuReadyCount = 0; }
         }
         g.statTick = now;
     }

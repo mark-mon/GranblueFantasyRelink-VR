@@ -200,8 +200,8 @@ bool Update() {
     static int rehook = 0;
     if ((++rehook % 300) == 1) input::InstallHooks();   // the game may load XInput late
     uint32_t b = input::Poll();
-    if (b & input::Toggle) { if (g_open) Close(); else { g_open = true; input::SetBlocking(true); } b &= ~input::Toggle; }
-    else if (g_open && (b & input::Back)) { Close(); return false; }
+    if (b & input::Toggle) { if (g_open) { Close(); Log("vrkit: menu closed"); } else { g_open = true; input::SetBlocking(true); Log("vrkit: menu opened"); } b &= ~input::Toggle; }
+    else if (g_open && (b & input::Back)) { Close(); Log("vrkit: menu closed (back)"); return false; }
     if (!g_open) return false;
     Navigate(b);
     ImGui::SetCurrentContext(g_im);
