@@ -1146,6 +1146,13 @@ static void StereoEndFrame() {
             if ((uint64_t)g.hudH * 16 > (uint64_t)g.hudW * 9) { bandH = (int32_t)((uint64_t)g.hudW * 9 / 16); y0 = ((int32_t)g.hudH - bandH) / 2; }
             hq.subImage.imageRect = { { 0, y0 }, { (int32_t)g.hudW, bandH } };
             hq.pose = { { 0, 0, 0, 1 }, { 0, 0, -g_cfg.hudDistance } };
+            if (!g_cfg.hudFollowHead && g.haveRef && g.local) {
+                // fixed in space: straight ahead of the recentred forward direction, at eye height
+                Quat r{ g.refYaw.x, g.refYaw.y, g.refYaw.z, g.refYaw.w };
+                Vec3f o = QRot(r, Vec3f{ 0, 0, -g_cfg.hudDistance });
+                hq.space = g.local;
+                hq.pose = { g.refYaw, { g.refPos.x + o.x, g.refPos.y + o.y, g.refPos.z + o.z } };
+            }
             hq.size = { g_cfg.hudSize, g_cfg.hudSize * (float)bandH / (float)g.hudW };
             layers[n++] = (XrCompositionLayerBaseHeader*)&hq;
         }

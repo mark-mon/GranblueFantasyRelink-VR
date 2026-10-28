@@ -50,6 +50,8 @@ void Register() {
              "Upper limit for the per-eye width / height in pixels.", [] { VR_ApplyRenderScale(); });
     o.AddBool("Display", "show_stats", "Stats panel", &g_cfg.showStats,
               "Frame rate, CPU / GPU times and the active settings.", [] { VR_SetStatsOn(g_cfg.showStats); });
+    o.AddBool("Display", "hud_follow_head", "HUD follows head", &g_cfg.hudFollowHead,
+              "On: the HUD moves with your head. Off: it stays fixed in space straight ahead (recenter to move it).");
     o.AddFloat("Display", "hud_distance", "HUD distance (m)", &g_cfg.hudDistance, 0.3f, 10.f, 0.1f, 1,
                "How far away the game's HUD panel floats.");
     o.AddFloat("Display", "hud_size", "HUD width (m)", &g_cfg.hudSize, 0.2f, 10.f, 0.1f, 1,

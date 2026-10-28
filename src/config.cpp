@@ -55,6 +55,9 @@ static const char* kDefaultConfig =
 "# HUD panel distance and width, in metres.\n"
 "hud_distance = 1.5\n"
 "hud_size = 1.6\n"
+"# hud_follow_head: true = the HUD panel moves with your head; false = it stays fixed in space straight ahead\n"
+"# (in front of where you face after recentering), so you can look around it.\n"
+"hud_follow_head = true\n"
 "# hud_blur_backdrop: the game's frosted-glass panel backgrounds (a blurred copy of the screen). They show a\n"
 "# misplaced piece of the scene on the VR HUD, so they are off by default.\n"
 "hud_blur_backdrop = false\n"
@@ -252,6 +255,7 @@ bool LoadConfig(const std::wstring& path, Config& cfg) {
         else if (key == "fov_overscan") ok = ParseFloat(val, cfg.fovOverscan, 0.f, 15.f);
         else if (key == "render_scale") ok = ParseFloat(val, cfg.renderScale, 0.25f, 3.f);
         else if (key == "hud_distance") ok = ParseFloat(val, cfg.hudDistance, 0.3f, 20.f);
+        else if (key == "hud_follow_head") { if (lval == "true" || lval == "1") cfg.hudFollowHead = true; else if (lval == "false" || lval == "0") cfg.hudFollowHead = false; else ok = false; }
         else if (key == "hud_blur_backdrop") { if (lval == "true" || lval == "1") cfg.hudBlurBackdrop = true; else if (lval == "false" || lval == "0") cfg.hudBlurBackdrop = false; else ok = false; }
         else if (key == "hud_size") ok = ParseFloat(val, cfg.hudSize, 0.1f, 20.f);
         else if (key == "scale_down_key" || key == "scale_up_key" || key == "stats_key" || key == "capture_key" || key == "screenshot_key" || key == "vrs_key" || key == "quad_key" || key == "eye_tracking_key" || key == "aa_key") {
