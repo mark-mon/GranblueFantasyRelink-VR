@@ -4,6 +4,7 @@
 #include <atomic>
 #include <intrin.h>
 #include "MinHook.h"
+#include "gameaddr.h"
 #include "globals.h"
 
 namespace {
@@ -42,6 +43,7 @@ void __fastcall hkSync(void* c) { Rec("syncJob>", (uintptr_t)_ReturnAddress() - 
 }
 
 void Trace_Install() {
+    if (!GameAddr_KnownBuild()) return;   // fixed addresses: only valid on the build they were found on
     g_base = (uintptr_t)GetModuleHandleW(nullptr);
     QueryPerformanceFrequency(&g_freq);
     MH_CreateHook((void*)(g_base + 0x1a3320), (void*)hkRel, (void**)&oRel); MH_EnableHook((void*)(g_base + 0x1a3320));

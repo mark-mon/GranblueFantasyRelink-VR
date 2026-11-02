@@ -1,5 +1,6 @@
 #include <intrin.h>
 #include "camera.h"
+#include "gameaddr.h"
 // Camera discovery (diagnostic). Press F9 during gameplay with the camera still:
 //  1. Scans every CPU buffer update for 2 frames, looking for projection / view matrices.
 //  2. Searches process memory for the CPU-side copies of those matrices and names the
@@ -890,13 +891,14 @@ bool CameraAnalyse() {
 //   exe+0x7038130: pointer to view array, exe+0x7038140: int count, exe+0x70207c4: int current view
 //   element stride 0x9F0; CPU-side matrices (row-vector form, transposed vs GPU):
 //   +0x40 projection, +0x80 view*proj, +0xC0 view, +0x150.. more; flags at +0x9dd/+0x9e0/+0x9e1
-const uintptr_t RVA_VIEWS = 0x7038130, RVA_VIEWCOUNT = 0x7038140, RVA_CURVIEW = 0x70207c4, VIEW_STRIDE = 0x9F0;
+const uintptr_t VIEW_STRIDE = 0x9F0;   // addresses: gameaddr.cpp (GA_Views / GA_ViewCount / GA_CurView)
 
 bool ViewArrayAnalyse() {
     __try {
-        uintptr_t arr = *(uintptr_t*)(g_exeBase + RVA_VIEWS);
-        int count = *(int*)(g_exeBase + RVA_VIEWCOUNT);
-        int cur = *(int*)(g_exeBase + RVA_CURVIEW);
+        if (!GA(GA_Views) || !GA(GA_ViewCount)) { LOGI("Discovery: view array not found in this game build"); return false; }
+        uintptr_t arr = *(uintptr_t*)GA(GA_Views);
+        int count = *(int*)GA(GA_ViewCount);
+        int cur = GA(GA_CurView) ? *(int*)GA(GA_CurView) : -1;
         LOGI("Discovery: view array %p, count %d, current view %d", (void*)arr, count, cur);
         if (!arr || count <= 0 || count > 64) return false;
         int main = -1;

@@ -26,9 +26,10 @@ Version **1.0.2**. Unofficial fan mod, not affiliated with or endorsed by Cygame
 
 ## Requirements
 
-- Granblue Fantasy: Relink, Steam version (tested with the October 2026 build, `granblue_fantasy_relink.exe`
-  123,520,480 bytes). A game update can change the code the mod hooks. If it stops working after an update,
-  please open an issue.
+- Granblue Fantasy: Relink, Steam version (tested with game version 2.0.6, `granblue_fantasy_relink.exe`
+  123,520,480 bytes). The mod finds the game code it needs by pattern, so updates that only move code around
+  should keep working. If the log says `game code not recognised` or `NOT FOUND`, please open an issue with
+  `GranblueVR.log`.
 - A PC VR headset with **SteamVR** (or another OpenXR runtime set as the active runtime). Tested with a Pimax Dream Air
   on SteamVR.
 - An Xbox-style controller (XInput).

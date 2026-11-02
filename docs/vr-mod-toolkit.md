@@ -1,6 +1,8 @@
 # VR mod toolkit: reusable parts from GranblueVR (D3D11 + OpenXR)
 
-How the game-independent parts of the Granblue Fantasy Relink VR mod work, what each one needs from a game, and the pitfalls hit along the way. Source: `src/` (files named below). The plan is to move these into a shared library (`vrkit/`) with a small per-game adapter; this doc is the spec for that. The first part already in `vrkit/` is the in-game settings menu: see `vrkit/README.md`.
+Master copies of the shared code and docs: private repo **mark-mon/vr-sharedtools** (vrkit, xrbridge, these docs, test-agent scripts).
+
+How the game-independent parts of the Granblue Fantasy Relink VR mod work, what each one needs from a game, and the pitfalls hit along the way. Source: `granbluevr/src` (files named below). The plan is to move these into a shared library (`vrkit/`) with a small per-game adapter; this doc is the spec for that. The first part already in `vrkit/` is the in-game settings menu: see `vrkit/README.md` (project copy: `claude/vrkit-menu.md`).
 
 ## Architecture in one paragraph
 The mod is a `dinput8.dll` proxy. It hooks DXGI Present/ResizeBuffers (dummy swapchain vtable), the game's D3D11 deferred contexts (dummy deferred context vtable) and a few game functions (render-frame, camera update, view update). The game renders the **left eye** normally with our camera. Its deferred command lists are recorded at `ExecuteCommandList` and **re-executed at Present** for every further view (right eye; with quad views also two insets), after swapping the per-view constant buffers. Each view's back buffer is copied into its OpenXR swapchain. One render-frame of CPU work feeds all views.
@@ -28,14 +30,22 @@ The mod is a `dinput8.dll` proxy. It hooks DXGI Present/ResizeBuffers (dummy swa
 - Changing the pattern between views: `UpdateSubresource` on the immediate context between executions (the lists reference the texture, not its contents). Only upload when the pattern key changes (view kind, centre tile, inset rect).
 - Gains depend on how much of the frame is pixel-shader bound. Compute-shader lighting is not affected. Measured: 11% on a 3080 Ti at 1856x2056, about 35% fps (33 -> 45) at 5500x4800 per eye on a 5090.
 
-## Quad views - vr.cpp / camera.cpp / replay.cpp
-- Views 0/1 = wide (both eyes), 2/3 = insets. All views render at the game's render size (the replay reuses the game's targets), so an inset of size f (fraction of the wide view in tangent space) has 1/f the pixel density.
-- Inset frustum: tangents `centre +- f * halfSpan`, centre = gaze (or offset), clamped inside the wide view. Off-centre projection needs a correct off-axis projection in the camera blocks (FixProjection writes P[8]/P[9]).
-- Each replayed view needs its own previous-frame camera slots (motion vectors) and its own temporal-history copies.
-- Submission: second XrCompositionLayerProjection with the inset FOVs and `XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT`; the inset is blitted with a premultiplied feathered alpha edge. If a runtime ignores a second projection layer, fall back to compositing into one high-resolution projection image.
-- With VRS, shade the wide view's area under the inset (minus the feather) at 4x4.
-- Cost: every view repeats the game's resolution-independent GPU work (shadows, culling compute). Pays off only with a clearly lower render scale.
-- **Outcome in GranblueVR (1.0): shelved.** Each extra view cost about 8 ms, and the inset juddered under SteamVR reprojection. Eye-tracked VRS gave more for free (about 25-35% fps, hardly visible). Quad views stay in the code but are hidden: not in the menu or config template, off by default, `quad_key` unbound. For a new game, try VRS + gaze first. Consider quad views only if the game's resolution-independent work is small, or it can be skipped in the extra views.
+## Quad views - see `vrkit/quadviews/README.md`
+The reusable code (inset math, local compositor, unit tests) and the full checklist live in `vrkit/quadviews/`.
+It combines AvalonVR, where quad views work and pay off, with GranblueVR, where they were shelved. Key points:
+- **Compose the inset into one projection image per eye** before `xrEndFrame`. A separately submitted second
+  projection layer judders under SteamVR / ASW reprojection. That was GranblueVR's main visual problem.
+- Render the periphery at low density (25-40%) and the inset at full density. 50% x 50% focus with a 40% periphery
+  is 41% of the pixels.
+- Seam fixes: periphery mip bias (log2 scale), shared auto-exposure across views, angular matching of
+  froxel / volumetric grids, full-eye LOD parameters for the inset, shared shadow culling, and a feathered edge.
+- Per-view fixed GPU work (shadow maps, culling, compute) decides whether quad views beat VRS. Measure both.
+  - AvalonVR (Unity HDRP + DLSS): quad views win, and VRS gave nothing.
+  - GranblueVR (replay stereo, about 8 ms of fixed work per view): eye-tracked VRS wins, about 25-35%.
+- GranblueVR specifics: all views share the game's render size because they are command-list replays. Its quad
+  views (`vr.cpp` / `camera.cpp` / `replay.cpp`, `quad_views = true`, hidden) used a second projection layer and
+  per-view exposure. If revisited: local composition, shared exposure, VRS over the whole wide view, and skipping
+  shadow passes in replays.
 
 ## Eye gaze - vr.cpp
 - Enable `XR_EXT_eye_gaze_interaction` if listed; check `XrSystemEyeGazeInteractionPropertiesEXT.supportsEyeGazeInteraction`.
@@ -56,6 +66,9 @@ The mod is a `dinput8.dll` proxy. It hooks DXGI Present/ResizeBuffers (dummy swa
 - Per-game work is a single adapter file (GranblueVR: `src/menu_options.cpp`, about 120 lines). Full integration checklist: `vrkit/README.md`.
 
 ## Lessons / pitfalls (save time next game)
+- **Don't hard-code game offsets.** GranblueVR 1.0.0-1.0.2 used fixed `exe+0x...` addresses; a user with a different game build (smaller exe, same version number) got only the flat screen, and diagnostic hooks were installed at random bytes in his exe. Find code by pattern (`sigscan/`), check the result, and gate anything that still uses fixed addresses on `knownBuild`. Generate the patterns in-process on the known build: the code is DRM-encrypted on disk.
+- **Pre-rendered movies flicker** if the mod decides VR vs flat per frame: the game keeps running render-frames between movie presents, so frames alternate between stereo (the movie copied into both eyes) and the flat theater screen. Hook the video library's open/close (Bink: `BinkOpen` / `BinkClose` in bink2w64.dll; the handle starts with Width, Height) and stay flat while a large movie is open. As a general guard, hold flat mode for a couple of seconds after several VR/flat switches within one second. (GranblueVR `src/movie.cpp`.)
+- **Culling and streaming can follow the game camera, not the eyes.** Widening the view's culling FOV wasn't enough in GranblueVR: the camera object's own FOV (a second test), and texture streaming that follows the camera's direction, still dropped things at the view edges when turning the head. A much wider game-camera FOV fixed most of it (`edge_clipping`); turning the game camera with the head is the complete fix.
 - **Never GPU-write the game's dynamic constant ring** (CopySubresourceRegion into a MAP_WRITE_NO_OVERWRITE ring caused TDRs and a 0x10E bugcheck). Redirect binds to your own DEFAULT buffers instead.
 - The immediate context's vtable can be swapped after startup; re-hook from the live vtable periodically.
 - Use a symmetric render frustum covering both eyes: screen-space content (HUD) then converges, and some passes that bake the projection offset stop mattering.

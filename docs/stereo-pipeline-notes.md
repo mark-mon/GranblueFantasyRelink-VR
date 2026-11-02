@@ -97,3 +97,23 @@ Per-frame data is produced once per game frame, outside render-frame:
   the culling margin (default 15 deg, experimental 25 deg; was 6). No measurable cost on the test PC (draws, CPU,
   GPU unchanged at a static pose).
 - Triggers added for this: camdump, viewdump, camhead=0|1, edge=off|default|experimental.
+
+## 1.0.3: addresses by signature scan (2026-11-01)
+- A user's log (1.0.0, Quest 3 / Virtual Desktop, RX 9070 XT) showed `UpdateView prologue mismatch - unsupported game
+  version`: his exe image size is 0x81dd000, ours 0x8218000 (Steam build 24955526, exe 2.0.6, 123,520,480 bytes,
+  PE timestamp 0x6a8ec59e). The test PC had not been updated, so his is another build (older, a beta branch or
+  another store). The mod only showed the flat theater screen. Worse, `Trace_Install` hooked its four fixed
+  addresses on his build without any check.
+- `src/gameaddr.cpp` now finds every address the default single-pass stereo path uses by byte pattern: UpdateView,
+  render-frame, camera update, render job, constant upload (functions); view array, view count, current view,
+  frame payload, pending payload, frame token, resolution index and table (globals). Two patterns per entry
+  (function start + call site, or two RIP-relative accesses), wildcards on RIP displacements and relative branches,
+  struct offsets kept (e.g. the view stride 0x9f0). Scan: about 0.8 s at the first Present.
+- Patterns were generated in-process on the known build with `debug_make_sigs = 1` (writes GranblueVR_sigs.txt,
+  about 35 s). On the test PC all 13 resolve to the old addresses ("the build the mod was made on") and stereo runs.
+- Legacy two-pass stereo (debug_stereo without 8192), its patches (kick, handshake, frame worker, stage skip), the
+  queue-push / instance-alloc hooks, the resolution experiments and Trace still use fixed addresses. They're only
+  installed when every scanned address matches the known build (`GameAddr_KnownBuild()`).
+- On another build: if a required entry is missing, head tracking / stereo are disabled with a clear log line, and
+  each failing pattern's match count is logged (0 = code changed, 2+ = pattern too short).
+- Shared, generalised version: vr-sharedtools `sigscan/`.

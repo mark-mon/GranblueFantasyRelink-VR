@@ -10,6 +10,7 @@
 #include "MinHook.h"
 #include "globals.h"
 #include "camera.h"
+#include "gameaddr.h"
 void MapLog_Marker(char, uintptr_t);
 static void InstStats(const char* tag);
 extern volatile int g_recEye; extern volatile bool g_spActive;
@@ -112,7 +113,8 @@ bool InstallKickPatch() {
     LOGI("Camera: sim kick patch installed (stub %p)", (void*)st);
     return true;
 }
-bool g_kickPatched = false;
+bool g_kickPatched = false;   // legacy two-pass stereo patches (known build only)
+bool g_hooksReady = false;    // single-pass stereo hooks
 using SemFn = void(__fastcall*)(void*);
 using MtxFn = int(__cdecl*)(void*);
 
@@ -311,8 +313,8 @@ void __fastcall hkQueuePush(void* queue, void* item) {
     }
     oQueuePush(queue, item);
 }
-inline void* Payload() { return *(void**)(g_base + RVA_PAYLOAD); }
-inline void* Pending() { return *(void**)(g_base + RVA_PENDING); }
+inline void* Payload() { uintptr_t a = GA(GA_Payload); return a ? *(void**)a : nullptr; }
+inline void* Pending() { uintptr_t a = GA(GA_Pending); return a ? *(void**)a : nullptr; }
 inline int SemCount(uintptr_t rva) { return *(volatile int*)(g_base + rva); }
 
 volatile LONG g_skipEyeJob = 0;
@@ -356,7 +358,7 @@ std::atomic<int> g_presentsInRender{ 0 }, g_presentsOutside{ 0 };
 
 bool IsMainView(void** h) {
     if (!h || !*h) return false;
-    uintptr_t arr = *(uintptr_t*)(g_base + RVA_VIEWS);
+    uintptr_t arr = *(uintptr_t*)GA(GA_Views);
     return arr && (uintptr_t)*h == arr;
 }
 
@@ -392,12 +394,12 @@ void ApplyPose(const float* eye, const float* target, const float* up, const Pos
 }
 
 volatile int g_viewLog = 0;
-void ViewDumpStart() { g_viewLog = 60; LOGI("viewdump: main view element %p", (void*)*(uintptr_t*)(g_base + RVA_VIEWS)); }
+void ViewDumpStart() { g_viewLog = 60; LOGI("viewdump: main view element %p", (void*)*(uintptr_t*)GA(GA_Views)); }
 void __fastcall hkUpdateView(void** h, const float* eye, const float* target, const float* up, float a5, uint8_t a6, uint8_t a7) {
     if (!IsMainView(h)) {
         if (g_viewLog > 0) {   // diagnostics (trigger "viewdump"): other views updated, and whether they share the main camera
             --g_viewLog;
-            uintptr_t arr = *(uintptr_t*)(g_base + RVA_VIEWS);
+            uintptr_t arr = *(uintptr_t*)GA(GA_Views);
             bool same = g_last.valid && fabsf(eye[0] - g_last.eye[0]) < 0.01f && fabsf(eye[1] - g_last.eye[1]) < 0.01f && fabsf(eye[2] - g_last.eye[2]) < 0.01f;
             LOGI("viewdump: view %p (index %lld) eye (%.2f %.2f %.2f) target (%.2f %.2f %.2f) up (%.2f %.2f %.2f) a5 %.3f a6 %d a7 %d%s",
                  h ? *h : nullptr, h && *h && arr ? ((long long)((uintptr_t)*h - arr)) / 0x9f0 : -1, eye[0], eye[1], eye[2], target[0], target[1], target[2],
@@ -488,7 +490,7 @@ static void BuildViewBlocks(uintptr_t e, float* A, float* B) {
     Transp(A + 0x00 / 4, M(0x00)); Transp(A + 0x40 / 4, M(0x40)); Transp(A + 0x80 / 4, M(0x80)); Transp(A + 0xc0 / 4, M(0xc0));
     Transp(A + 0x100 / 4, M(0x150)); Transp(A + 0x140 / 4, M(0x190)); Transp(A + 0x180 / 4, M(0x1d0)); Transp(A + 0x1c0 / 4, M(0x210));
     A[0x200 / 4 + 0] = F[0x140 / 4]; A[0x200 / 4 + 1] = F[0x144 / 4]; A[0x200 / 4 + 2] = F[0x290 / 4]; A[0x200 / 4 + 3] = F[0x294 / 4];
-    uint32_t g = *(volatile uint32_t*)(g_base + 0x703e910);
+    uint32_t g = *(volatile uint32_t*)GA(GA_FrameToken);
     memcpy(&A[0x210 / 4], &g, 4); A[0x214 / 4] = 0; A[0x218 / 4] = 0; A[0x21c / 4] = 0;
     memcpy(B + 0x00 / 4, A + 0x00 / 4, 64);
     Transp(B + 0x40 / 4, M(0x100));
@@ -613,7 +615,7 @@ static void SinglePassStereo(void* renderer, EyeSetup* eyes, uintptr_t view, int
     g_spActive = true; Replay_EnableRedirect(true);
     TrackGameFov(view);
     { static bool sched = false; if (!sched && g_cfg.perEyeHistory) { sched = true; Temporal_Schedule(120); } }
-    if (g_cfg.forceW > 0 && (g_cfg.debugStereo & 65536)) {
+    if (g_cfg.forceW > 0 && (g_cfg.debugStereo & 65536) && GameAddr_KnownBuild()) {
         // experiment 2: change the game's resolution settings table (exe+0x6b83460, 6 x 0x4c) and flag a re-apply
         static int applied = 0;
         if (applied < 1) {
@@ -629,7 +631,7 @@ static void SinglePassStereo(void* renderer, EyeSetup* eyes, uintptr_t view, int
             *(volatile uint8_t*)(g_base + 0x7035984) = 1;
         }
     }
-    if (g_cfg.forceW > 0 && (g_cfg.debugStereo & 16384)) {
+    if (g_cfg.forceW > 0 && (g_cfg.debugStereo & 16384) && GameAddr_KnownBuild()) {
         // experiment: the game's render-size globals (exe+0x6b832d0.. per frame from +0x6b832e0)
         volatile uint32_t* r = (volatile uint32_t*)(g_base + 0x6b832d0);
         r[0] = g_cfg.forceW; r[1] = g_cfg.forceH; r[2] = g_cfg.forceW; r[3] = g_cfg.forceH;
@@ -674,10 +676,10 @@ volatile bool g_eye0Present = false;
 // its own swap chain and every render target (the ResizeBuffers hook keeps the swap chain at the size too).
 static void ApplyRenderSize() {
     UINT w, h;
-    if (!VR_RenderSize(&w, &h)) return;
-    uint32_t idx = *(volatile uint32_t*)(g_base + 0x7035980);
+    if (!GA(GA_ResIndex) || !GA(GA_ResTable) || !VR_RenderSize(&w, &h)) return;
+    uint32_t idx = *(volatile uint32_t*)GA(GA_ResIndex);
     if (idx >= 6) return;
-    uint32_t* e = (uint32_t*)(g_base + 0x6b83460 + idx * 0x4c);
+    uint32_t* e = (uint32_t*)(GA(GA_ResTable) + idx * 0x4c);
     if (e[9] == w && e[10] == h && e[11] == w && e[12] == h) return;
     static int lg = 0;
     if (lg < 6) { ++lg; LOGI("Render size: preset %u %ux%u (output %ux%u) -> %ux%u", idx, e[9], e[10], e[11], e[12], w, h); }
@@ -691,7 +693,8 @@ void __fastcall hkRenderFrame(void* renderer) {
     ApplyRenderSize();
     EyeSetup eyes[4];
     bool cameraLive = g_renderFrames.load() - g_lastMainUpdateAt <= 2;   // menus/loading don't update it
-    if (g_kickPatched && g_last.valid && cameraLive && Payload() && IsMainView(g_last.handle) && VR_StereoWanted() && VR_StereoBegin(eyes)) {
+    const bool singlePass = (g_cfg.debugStereo & 8192) != 0;
+    if ((singlePass ? g_hooksReady : g_kickPatched) && g_last.valid && cameraLive && Payload() && IsMainView(g_last.handle) && VR_StereoWanted() && VR_StereoBegin(eyes)) {
         uintptr_t view = (uintptr_t)*g_last.handle;
         if (g_cfg.debugStereo & 8192) { SinglePassStereo(renderer, eyes, view, VR_ViewCount()); return; }
         float savedAspect = *(float*)(view + 0x9d0), savedFov = *(float*)(view + 0x9d4);
@@ -926,34 +929,36 @@ static void LogUploadDiffs() {
 }
 bool Camera_Install() {
     g_base = (uintptr_t)GetModuleHandleW(nullptr);
-    // Sanity-check the code we are about to hook (build 2026-08-26 / v2.0.6).
-    const uint8_t expectUV[] = { 0x41, 0x56, 0x56, 0x57, 0x55, 0x53, 0x48, 0x81, 0xEC, 0x00, 0x01, 0x00, 0x00 };
-    if (memcmp((void*)(g_base + RVA_UPDATEVIEW), expectUV, sizeof(expectUV)) != 0) {
-        LOGE("Camera: UpdateView prologue mismatch - unsupported game version; head tracking disabled");
+    if (g_cfg.debugMakeSigs) GameAddr_MakeSigs();   // before any hook changes the code
+    // Every address the stereo path needs is found by signature scan (gameaddr.cpp), so builds other than the one
+    // the mod was made on work as long as the code is still recognisable.
+    if (!GameAddr_Resolve()) {
+        LOGE("Camera: game code not recognised - unsupported game version; head tracking disabled");
         return false;
     }
-    bool ok = MH_CreateHook((void*)(g_base + RVA_UPDATEVIEW), (void*)hkUpdateView, (void**)&oUpdateView) == MH_OK &&
-              MH_EnableHook((void*)(g_base + RVA_UPDATEVIEW)) == MH_OK;
+    auto hook = [](uintptr_t at, void* fn, void** orig) {
+        return at && MH_CreateHook((void*)at, fn, orig) == MH_OK && MH_EnableHook((void*)at) == MH_OK;
+    };
+    bool ok = hook(GA(GA_UpdateView), (void*)hkUpdateView, (void**)&oUpdateView);
     LOGI("Camera: UpdateView hook %s", ok ? "installed" : "FAILED");
-    bool ok2 = MH_CreateHook((void*)(g_base + RVA_RENDERFRAME), (void*)hkRenderFrame, (void**)&oRenderFrame) == MH_OK &&
-               MH_EnableHook((void*)(g_base + RVA_RENDERFRAME)) == MH_OK;
+    bool ok2 = hook(GA(GA_RenderFrame), (void*)hkRenderFrame, (void**)&oRenderFrame);
     LOGI("Camera: render-frame hook %s", ok2 ? "installed" : "FAILED");
-    {
-        const uint8_t* p = (const uint8_t*)(g_base + RVA_CAMUPDATE);
-        static const uint8_t sig[] = { 0x56, 0x53, 0x48, 0x81, 0xEC, 0x88, 0x00, 0x00, 0x00 };   // push rsi; push rbx; sub rsp,88h
-        bool sigOk = memcmp(p, sig, sizeof(sig)) == 0;
-        bool ok = sigOk && MH_CreateHook((void*)p, (void*)hkCamUpdate, (void**)&oCamUpdate) == MH_OK && MH_EnableHook((void*)p) == MH_OK;
-        LOGI("Camera: camera-update hook %s", ok ? "installed" : sigOk ? "FAILED" : "skipped (unexpected code - different game version?)");
+    bool okCam = hook(GA(GA_CamUpdate), (void*)hkCamUpdate, (void**)&oCamUpdate);
+    LOGI("Camera: camera-update hook %s", okCam ? "installed" : GA(GA_CamUpdate) ? "FAILED" : "skipped (not found)");
+    bool ok3 = hook(GA(GA_RenderJob), (void*)hkRenderJob, (void**)&oRenderJob);
+    LOGI("Camera: render-job hook %s", ok3 ? "installed" : GA(GA_RenderJob) ? "FAILED" : "skipped (not found)");
+    bool okUp = hook(GA(GA_CbUpload), (void*)hkCbUpload, (void**)&oCbUpload);
+    LOGI("Camera: constant-upload hook %s", okUp ? "installed" : "FAILED");
+    g_hooksReady = ok && ok2 && okUp && GA(GA_Views) && GA(GA_Payload) && GA(GA_FrameToken);
+    if (GameAddr_KnownBuild()) {
+        // Legacy two-pass stereo and diagnostics use fixed addresses: only on the build they were found on.
+        bool ok4 = hook(g_base + RVA_QUEUEPUSH, (void*)hkQueuePush, (void**)&oQueuePush);
+        hook(g_base + 0x3a0c210, (void*)hkInstAlloc, (void**)&oInstAlloc);
+        g_kickPatched = ok4 && ok3 && InstallKickPatch() && InstallHandshakePatch() && InstallWorkerPatch() && InstallStageSkipPatch();
+    } else {
+        LOGI("Camera: different game build - legacy two-pass stereo (debug_stereo without 8192) unavailable");
     }
-    bool ok3 = MH_CreateHook((void*)(g_base + RVA_RENDERJOB), (void*)hkRenderJob, (void**)&oRenderJob) == MH_OK &&
-               MH_EnableHook((void*)(g_base + RVA_RENDERJOB)) == MH_OK;
-    LOGI("Camera: render-job hook %s", ok3 ? "installed" : "FAILED");
-    bool ok4 = MH_CreateHook((void*)(g_base + RVA_QUEUEPUSH), (void*)hkQueuePush, (void**)&oQueuePush) == MH_OK &&
-               MH_EnableHook((void*)(g_base + RVA_QUEUEPUSH)) == MH_OK;
-    LOGI("Camera: payload-return hook %s", ok4 ? "installed" : "FAILED");
-    if (MH_CreateHook((void*)(g_base + 0x7dd4b0), (void*)hkCbUpload, (void**)&oCbUpload) == MH_OK) MH_EnableHook((void*)(g_base + 0x7dd4b0));
-    if (MH_CreateHook((void*)(g_base + 0x3a0c210), (void*)hkInstAlloc, (void**)&oInstAlloc) == MH_OK) MH_EnableHook((void*)(g_base + 0x3a0c210));
-    g_kickPatched = ok4 && ok3 && InstallKickPatch() && InstallHandshakePatch() && InstallWorkerPatch() && InstallStageSkipPatch();
+    if (!g_hooksReady) LOGE("Camera: stereo hooks incomplete - stereo disabled");
     return ok;
 }
 
