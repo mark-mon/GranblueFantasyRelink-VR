@@ -11,5 +11,9 @@ Native VR mod for Granblue Fantasy: Relink (D3D11 + OpenXR), shipped as a `dinpu
 - `vrkit/` is a copy of the shared settings-menu library. Port improvements back to the shared repo.
 - Releases: bump `GBVR_VERSION` / `kModVersion` in `src/dllmain.cpp`, build, zip `dinput8.dll` + `config.txt` +
   `README.txt`, tag `vX.Y`, and attach the zip to a GitHub release.
-- Test PC: the user shares it with other work. Stop the game (`GB-Stop`) at the end of every test run or session,
-  as the last command, and don't start it while the user says the machine is in use.
+- Test PC (shared with other projects): send commands through the shared agent, file
+  `D:\vrconversions\sharedtools\agent\inbox\granbluevr__<NNN_name>.cmd.ps1` (new number every time); output in
+  `D:\vrconversions\granbluevr\agent\outbox\<NNN_name>.out.txt`. Rules in `D:\vrconversions\sharedtools\agent\README.txt`.
+  Each command dot-sources `D:\vrconversions\granbluevr\agent\gbvr.ps1`, installs with `GB-InstallTest`, and ends with
+  `GB-Cleanup` in a `finally` (stops the game and removes the mod's files from the game folder; log and test config are
+  kept in `granbluevr\test\gamefolder_backup`). Don't start the game while the user says the machine is in use.
