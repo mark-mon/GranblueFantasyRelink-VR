@@ -19,6 +19,7 @@
 #include <algorithm>
 #include "MinHook.h"
 #include "globals.h"
+void* g_hookedVt[2][130] = {};   // context vtable entries when we hooked them: [0] immediate, [1] deferred
 
 bool Replay_OnExec(ID3D11DeviceContext* c, ID3D11CommandList* cl, BOOL restore, void (STDMETHODCALLTYPE* exec)(ID3D11DeviceContext*, ID3D11CommandList*, BOOL));
 ID3D11RenderTargetView* Hud_OnSetRenderTargets(ID3D11DeviceContext* c, UINT n, ID3D11RenderTargetView* const* rtvs, ID3D11DepthStencilView* dsv);
@@ -594,6 +595,7 @@ bool HookCtx(ID3D11DeviceContext* ctx, CtxHooks& h, void* m, void* u, void* up, 
     }
     if (ok) ok = MH_EnableHook(vt[14]) == MH_OK && MH_EnableHook(vt[15]) == MH_OK && MH_EnableHook(vt[48]) == MH_OK;
     LOGI("Discovery: %s context hooks %s (Map=%p)", what, ok ? "installed" : "FAILED", vt[14]);
+    memcpy(g_hookedVt[deferred ? 1 : 0], vt, sizeof(g_hookedVt[0]));
     HookInstr(vt, deferred ? g_id : g_ii, deferred);
     return ok;
 }
@@ -1309,6 +1311,7 @@ void RehookImmediate() {
     bool execNew = v[58] != g_execOrigAt && v[58] != g_4ExecAt;
     if (!mapNew && !execNew) return;
     LOGI("Discovery: immediate live Map %p (hooked %p/%p) Unmap %p Exec %p (hooked %p/%p)", v[14], g_imm.map, g_4MapAt, v[15], v[58], g_execOrigAt, g_4ExecAt);
+    { void ProbeContexts(const char*); static int n = 0; if (n++ < 3) ProbeContexts("immediate context changed"); }
     if (mapNew && !g_4MapAt) {
         g_4MapAt = v[14]; if (MH_CreateHook(v[14], (void*)hk4Map, (void**)&o4Map) == MH_OK) LOGI("  rehook Map %d", (int)MH_EnableHook(v[14]));
         g_4UnmapAt = v[15]; if (MH_CreateHook(v[15], (void*)hk4Unmap, (void**)&o4Unmap) == MH_OK) LOGI("  rehook Unmap %d", (int)MH_EnableHook(v[15]));
@@ -1316,6 +1319,42 @@ void RehookImmediate() {
     if (execNew && !g_4ExecAt) {
         MH_STATUS st = MH_CreateHook(v[58], (void*)hk4Exec, (void**)&o4Exec);
         if (st == MH_OK) { g_4ExecAt = v[58]; LOGI("  rehook Exec %d", (int)MH_EnableHook(v[58])); } else LOGI("  rehook Exec create %d", (int)st);
+    }
+}
+// Which context-method entry points the runtime is using now, compared with the ones we hooked at startup. The
+// runtime can switch implementations (e.g. multithread protection, which some OpenXR runtimes turn on); a switch
+// for deferred contexts would hide the game's draws from every deferred hook (HUD, replay, AA, VRS).
+static const int kProbeIdx[] = { 7, 9, 12, 13, 14, 15, 20, 21, 33, 35, 41, 48, 114 };
+static int ProbeDiff(void** live, void** hooked, char* list, size_t n) {
+    int d = 0; list[0] = 0;
+    for (int i : kProbeIdx) if (live[i] != hooked[i]) { ++d; size_t l = strlen(list); snprintf(list + l, n - l, " %d", i); }
+    return d;
+}
+void ProbeContexts(const char* why) {
+    if (!g_dev || !g_ctx) return;
+    char lst[128];
+    int di = ProbeDiff(*(void***)g_ctx, g_hookedVt[0], lst, sizeof(lst));
+    LOGI("Discovery: context probe (%s): immediate %d of %zu entries differ from the hooked ones%s%s", why, di, sizeof(kProbeIdx) / sizeof(int), di ? ":" : "", lst);
+    ID3D11DeviceContext* dc = nullptr;
+    if (SUCCEEDED(g_dev->CreateDeferredContext(0, &dc)) && dc) {
+        int dd = ProbeDiff(*(void***)dc, g_hookedVt[1], lst, sizeof(lst));
+        LOGI("Discovery: context probe (%s): new deferred context: %d entries differ%s%s", why, dd, dd ? ":" : "", lst);
+        dc->Release();
+    }
+    ID3D11Device3* d3 = nullptr;
+    if (SUCCEEDED(g_dev->QueryInterface(__uuidof(ID3D11Device3), (void**)&d3)) && d3) {
+        ID3D11DeviceContext3* dc3 = nullptr;
+        if (SUCCEEDED(d3->CreateDeferredContext3(0, &dc3)) && dc3) {
+            int dd = ProbeDiff(*(void***)dc3, g_hookedVt[1], lst, sizeof(lst));
+            LOGI("Discovery: context probe (%s): new deferred context (Device3): %d entries differ%s%s", why, dd, dd ? ":" : "", lst);
+            dc3->Release();
+        }
+        d3->Release();
+    }
+    ID3D11Multithread* mt = nullptr;
+    if (SUCCEEDED(g_ctx->QueryInterface(__uuidof(ID3D11Multithread), (void**)&mt)) && mt) {
+        LOGI("Discovery: context probe (%s): multithread protection %s", why, mt->GetMultithreadProtected() ? "ON" : "off");
+        mt->Release();
     }
 }
 void HookCtx4(ID3D11DeviceContext* ctx) {
@@ -1437,6 +1476,14 @@ void Discovery_OnPresent() {
     }
 }
 void Discovery_Rehook() { RehookImmediate(); }
+void Discovery_Probe(const char* why) { ProbeContexts(why); }
+void Discovery_SetMtProtect(bool on) {
+    ID3D11Multithread* mt = nullptr;
+    if (g_ctx && SUCCEEDED(g_ctx->QueryInterface(__uuidof(ID3D11Multithread), (void**)&mt)) && mt) {
+        BOOL was = mt->SetMultithreadProtected(on); mt->Release();
+        LOGI("Discovery: multithread protection %d -> %d", (int)was, (int)on);
+    }
+}
 
 void Discovery_InstDraws(uint64_t* n, uint64_t* mn, uint64_t* mx, uint64_t* avg) {
     *n = g_diN.exchange(0); *mn = g_diMin.exchange(~0ull); *mx = g_diMax.exchange(0); uint64_t sm = g_diSum.exchange(0); *avg = *n ? sm / *n : 0;
