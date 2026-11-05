@@ -352,9 +352,58 @@ void STDMETHODCALLTYPE hkUpd1D(ID3D11DeviceContext* c, ID3D11Resource* r, UINT s
 }
 std::atomic<uint64_t> g_execSeq{ 0 };
 std::atomic<int> g_execLog{ 0 };
+// ---- environment diagnostics: which module implements what (wrappers / overlays between the game and D3D11)
+std::string ModName(const void* p) {
+    HMODULE m = nullptr; char path[MAX_PATH] = "?";
+    if (p && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)p, &m) && m) {
+        GetModuleFileNameA(m, path, MAX_PATH);
+        const char* b = strrchr(path, '\\'); char buf[300];
+        snprintf(buf, sizeof(buf), "%s+0x%llx", b ? b + 1 : path, (unsigned long long)((uintptr_t)p - (uintptr_t)m));
+        return buf;
+    }
+    char buf[32]; snprintf(buf, sizeof(buf), "%p (no module)", p); return buf;
+}
+void LogModules() {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
+    if (snap == INVALID_HANDLE_VALUE) return;
+    MODULEENTRY32W me; me.dwSize = sizeof(me);
+    std::string list;
+    for (BOOL ok = Module32FirstW(snap, &me); ok; ok = Module32NextW(snap, &me)) {
+        wchar_t* path = me.szExePath;
+        if (!_wcsnicmp(path, L"C:\\Windows\\", 11)) {
+            // system DLLs: only the graphics ones, with their path (a d3d11.dll / dxgi.dll elsewhere is a wrapper)
+            const wchar_t* b = wcsrchr(path, L'\\'); b = b ? b + 1 : path;
+            if (_wcsicmp(b, L"d3d11.dll") && _wcsicmp(b, L"dxgi.dll") && _wcsnicmp(b, L"amd", 3) && _wcsnicmp(b, L"atiu", 4) && _wcsnicmp(b, L"nvwgf", 5)) continue;
+        }
+        char a[MAX_PATH * 2]; WideCharToMultiByte(CP_UTF8, 0, path, -1, a, sizeof(a), nullptr, nullptr);
+        if (!list.empty()) list += " | ";
+        list += a;
+    }
+    CloseHandle(snap);
+    LOGI("Discovery: modules (non-system + graphics): %s", list.c_str());
+}
+// The first command lists the game executes: who implements them (our hooks only see lists recorded on contexts
+// implemented by the same code as the deferred context we create ourselves).
+void* g_refListVt = nullptr;
+void NoteExecList(ID3D11CommandList* cl) {
+    static std::atomic<int> n{ 0 };
+    if (!cl || n.load() >= 3 || n++ >= 3) return;
+    if (!g_refListVt && g_dev) {
+        ID3D11DeviceContext* dc = nullptr; ID3D11CommandList* rl = nullptr;
+        if (SUCCEEDED(g_dev->CreateDeferredContext(0, &dc)) && dc) {
+            if (SUCCEEDED(dc->FinishCommandList(FALSE, &rl)) && rl) { g_refListVt = *(void**)rl; rl->Release(); }
+            dc->Release();
+        }
+    }
+    void* vt = *(void**)cl;
+    LOGI("Discovery: game command list %p vtable %s (%s our own lists' %s)", (void*)cl, ModName(vt).c_str(),
+         vt == g_refListVt ? "same as" : "DIFFERENT from", ModName(g_refListVt).c_str());
+}
+
 void STDMETHODCALLTYPE hkExec(ID3D11DeviceContext* c, ID3D11CommandList* cl, BOOL restore) {
     if (g_captureFrames.load(std::memory_order_relaxed) > 0) ++g_execCount;
     uint64_t n = ++g_execSeq;
+    NoteExecList(cl);
     MapLog_Marker('X', (uintptr_t)_ReturnAddress() - (uintptr_t)GetModuleHandleW(nullptr));
     if (Replay_OnExec(c, cl, restore, oExec)) return;
     if (g_execLog > 0) { --g_execLog; LOGD("ExecuteCommandList #%llu list %p", n, (void*)cl); }
@@ -1294,7 +1343,7 @@ MapFn o4Map = nullptr; UnmapFn o4Unmap = nullptr; ExecFn o4Exec = nullptr;
 HRESULT STDMETHODCALLTYPE hk4Map(ID3D11DeviceContext* c, ID3D11Resource* r, UINT s, D3D11_MAP t, UINT f, D3D11_MAPPED_SUBRESOURCE* m) { HRESULT hr = o4Map(c, r, s, t, f, m); MapLogAdd('M', '4', r, t, (uintptr_t)_ReturnAddress(), m ? m->pData : nullptr, c); return hr; }
 void STDMETHODCALLTYPE hk4Unmap(ID3D11DeviceContext* c, ID3D11Resource* r, UINT s) { MapLogAdd('U', '4', r, 0, (uintptr_t)_ReturnAddress(), nullptr, c); o4Unmap(c, r, s); }
 void STDMETHODCALLTYPE hk4Exec(ID3D11DeviceContext* c, ID3D11CommandList* cl, BOOL restore) {
-    ++g_execSeq; MapLog_Marker('X', (uintptr_t)_ReturnAddress() - (uintptr_t)GetModuleHandleW(nullptr));
+    ++g_execSeq; NoteExecList(cl); MapLog_Marker('X', (uintptr_t)_ReturnAddress() - (uintptr_t)GetModuleHandleW(nullptr));
     if (Replay_OnExec(c, cl, restore, o4Exec)) return;
     Perf_OnExec(c);
     Temporal_OnExec(c, cl);
@@ -1338,7 +1387,7 @@ void ProbeContexts(const char* why) {
     ID3D11DeviceContext* dc = nullptr;
     if (SUCCEEDED(g_dev->CreateDeferredContext(0, &dc)) && dc) {
         int dd = ProbeDiff(*(void***)dc, g_hookedVt[1], lst, sizeof(lst));
-        LOGI("Discovery: context probe (%s): new deferred context: %d entries differ%s%s", why, dd, dd ? ":" : "", lst);
+        LOGI("Discovery: context probe (%s): new deferred context: %d entries differ%s%s (Draw %s)", why, dd, dd ? ":" : "", lst, ModName((*(void***)dc)[13]).c_str());
         dc->Release();
     }
     ID3D11Device3* d3 = nullptr;
@@ -1399,6 +1448,8 @@ void Discovery_Init(ID3D11Device* dev, ID3D11DeviceContext* ctx) {
         LOGI("Discovery: ExecuteCommandList hook at %p: create %d enable %d", ivt[58], (int)a, (int)b);
     }
     HookCtx4(ctx);
+    LogModules();
+    LOGI("Discovery: device %s, CreateDeferredContext %s, immediate Draw %s", ModName(*(void**)dev).c_str(), ModName((*(void***)dev)[27]).c_str(), ModName((*(void***)ctx)[13]).c_str());
     // The game records on deferred contexts created at startup (before we were hooked);
     // make one ourselves to reach the deferred-context implementation.
     ID3D11DeviceContext* dc = nullptr;

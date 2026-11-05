@@ -1627,7 +1627,7 @@ void VR_OnPresent(IDXGISwapChain* sc) {
             LONG vp = 0, vk = 0, vd = 0; Hud_TakeVia(&vp, &vk, &vd);
             LOGI("HUD: %llu stereo frames, UI missing in %llu; UI passes %ld after the post pass, %ld recorded apart; %ld other lone binds of the scene target; %llu non-stereo frames, %llu stereo/non-stereo switches",
                  g.hudFrames, g.hudMissing, vp, vd, vk - vd, g.monoFrames, g.switches);
-            { uint64_t fr = g.hudFrames + g.monoFrames; LONG d = PostFx_TakeDrawCount(); LOGI("Draws: %.0f per frame (deferred contexts, eye 1); camera FOV corrections %ld", fr ? (double)d / (double)fr : 0.0, Camera_TakeFovFixes()); }
+            { uint64_t fr = g.hudFrames + g.monoFrames; LONG d = PostFx_TakeDrawCount(); static uint64_t lastExec = 0; uint64_t ex = Discovery_ExecCount(); LOGI("Draws: %.0f per frame (deferred contexts, eye 1); camera FOV corrections %ld; command lists executed %llu", fr ? (double)d / (double)fr : 0.0, Camera_TakeFovFixes(), (unsigned long long)(ex - lastExec)); lastExec = ex; }
             g.hudFrames = g.hudMissing = g.monoFrames = g.switches = 0;
             PostFx_LogStats(); Vrs_LogStats();
             if (g.gazeSpace || g_cfg.debugFakeGaze > 0.f)
