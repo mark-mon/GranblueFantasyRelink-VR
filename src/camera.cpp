@@ -14,6 +14,7 @@
 void MapLog_Marker(char, uintptr_t);
 static void InstStats(const char* tag);
 extern volatile int g_recEye; extern volatile bool g_spActive;
+float g_eyeTanX = 0, g_eyeTanY = 0;   // eye 0 render FOV tangents of the current stereo frame (cloud FOV fix)
 extern int g_upN[2]; static void LogUploadDiffs();
 // engineDraw (exe+0x1a97d0) flips its double-buffer index for the per-object lists A/B (exe+0x718c908 /
 // 0x718c8f8) and then uploads list[index]; the producer (exe+0x23fe2c0, once per game frame) fills
@@ -696,6 +697,7 @@ void __fastcall hkRenderFrame(void* renderer) {
     const bool singlePass = (g_cfg.debugStereo & 8192) != 0;
     if ((singlePass ? g_hooksReady : g_kickPatched) && g_last.valid && cameraLive && Payload() && IsMainView(g_last.handle) && VR_StereoWanted() && VR_StereoBegin(eyes)) {
         uintptr_t view = (uintptr_t)*g_last.handle;
+        { g_eyeTanX = (std::max)(eyes[0].tanR, -eyes[0].tanL); g_eyeTanY = (std::max)(eyes[0].tanU, -eyes[0].tanD); }
         if (g_cfg.debugStereo & 8192) { SinglePassStereo(renderer, eyes, view, VR_ViewCount()); return; }
         float savedAspect = *(float*)(view + 0x9d0), savedFov = *(float*)(view + 0x9d4);
         Watchdog_Beat();
@@ -895,7 +897,60 @@ volatile int g_recEye = -1;
 volatile bool g_spActive = false;
 struct UpInfo { uintptr_t ra, src; uint64_t size, hash; };
 UpInfo g_upInfo[2][64]; int g_upN[2] = {};
+// diagnostics (trigger "clouddump"): the volumetric-cloud ray-march ParamBuffer (screenSize_ at +96 = half the render
+// size) next to the game camera and the main view's matrix, to work out how to give each eye its own cloud camera.
+volatile int g_cloudDump = 0;
+static void CloudDiag(void* desc, void* span) {
+    const float* p = *(const float**)span; uint64_t sz = ((uint64_t*)span)[1];
+    if (!p || sz < 0x80 || sz > 0x400) return;
+    UINT rw, rh; if (!VR_RenderSize(&rw, &rh)) return;
+    if (fabsf(p[24] - rw * 0.5f) > 1.5f || fabsf(p[25] - rh * 0.5f) > 1.5f) return;
+    static int n = 0; if ((n++ % 30) != 0) return;
+    --g_cloudDump;
+    LOGI("clouddump: upload size 0x%llx desc off 0x%llx", (unsigned long long)sz, (unsigned long long)((uint64_t*)desc)[1]);
+    for (int i = 0; i < 8 && i * 16 + 16 <= (int)sz; ++i) LOGI("clouddump:  cb[%d] %10.4f %10.4f %10.4f %10.4f", i, p[i * 4], p[i * 4 + 1], p[i * 4 + 2], p[i * 4 + 3]);
+    if (g_last.valid) {
+        LOGI("clouddump:  game eye %.4f %.4f %.4f target %.4f %.4f %.4f up %.4f %.4f %.4f", g_last.eye[0], g_last.eye[1], g_last.eye[2], g_last.target[0], g_last.target[1], g_last.target[2], g_last.up[0], g_last.up[1], g_last.up[2]);
+        const float* M = (const float*)(uintptr_t)*g_last.handle;
+        for (int i = 0; i < 4; ++i) LOGI("clouddump:  view[%d] %10.4f %10.4f %10.4f %10.4f", i, M[i * 4], M[i * 4 + 1], M[i * 4 + 2], M[i * 4 + 3]);
+        const float* P = M + 16;
+        LOGI("clouddump:  proj diag %.4f %.4f  [8] %.4f [9] %.4f  fov9d4 %.4f aspect9d0 %.4f", P[0], P[5], P[8], P[9], *(const float*)((uintptr_t)M + 0x9d4), *(const float*)((uintptr_t)M + 0x9d0));
+    }
+    Pose hp; if (VR_GetHeadPose(&hp)) LOGI("clouddump:  head q %.4f %.4f %.4f %.4f pos %.3f %.3f %.3f", hp.ori.x, hp.ori.y, hp.ori.z, hp.ori.w, hp.pos.x, hp.pos.y, hp.pos.z);
+}
+// Volumetric clouds: the ray-march (CS 9a9dc84eb55f13d0) builds its rays from its own ParamBuffer: matView_ (the
+// main view's matrix: head-tracked, correct), eyePosition_, and a symmetric projection, screenZ_ (+0x128) and
+// invAspectRatio_ (+0x12c), that the game derives from the view's vertical FOV / aspect at +0x9d4 / +0x9d0. The
+// mod sets those to the *culling* FOV (eye FOV + edge-clipping margin, aspect of the margin cone), so the clouds
+// were drawn with a wider FOV than the eye image: they moved slower than the world when turning the head, as if
+// stuck to the headset. Upload a copy with screenZ_ / invAspectRatio_ for the eye's real FOV instead.
+// Ray at a column edge: x = (w/2)(w/h) * invAspect, at a row edge: y = h/2; both over screenZ_.
+static bool PatchCloudParams(const float* p, uint64_t sz, float* out) {
+    if (!g_cfg.cloudFovFix || sz != 0x170 || !g_spActive || g_eyeTanX <= 0.f || g_eyeTanY <= 0.f) return false;
+    float w = p[24], h = p[25];
+    UINT rw, rh;
+    if (!VR_RenderSize(&rw, &rh) || fabsf(w - rw * 0.5f) > 1.5f || fabsf(h - rh * 0.5f) > 1.5f) return false;
+    if (!(p[28] > 0.f && p[29] > p[28] && p[30] > 0.f && p[31] > 0.f)) return false;   // nearZ_, farZ_, screenZ_, invAspect
+    memcpy(out, p, 0x170);
+    float screenZ = (h * 0.5f) / g_eyeTanY;
+    out[30] = screenZ;
+    out[31] = g_eyeTanX * screenZ / ((w * 0.5f) * (w / h));
+    static int logged = 0;
+    if (logged < 2) { ++logged; LOGI("Clouds: ray-march FOV %.1f x %.1f deg -> %.1f x %.1f deg (screenZ %.1f -> %.1f, invAspect %.3f -> %.3f)",
+        2 * atanf((w * 0.5f) * (w / h) * p[31] / p[30]) * 57.2958f, 2 * atanf(h * 0.5f / p[30]) * 57.2958f,
+        2 * atanf(g_eyeTanX) * 57.2958f, 2 * atanf(g_eyeTanY) * 57.2958f, p[30], out[30], p[31], out[31]); }
+    return true;
+}
 void* __fastcall hkCbUpload(void* desc, void* span) {
+    if (g_cloudDump > 0) CloudDiag(desc, span);
+    alignas(16) static thread_local float cloudCopy[0x170 / 4];
+    const float* src = *(const float**)span;
+    if (src && PatchCloudParams(src, ((uint64_t*)span)[1], cloudCopy)) {
+        *(const float**)span = cloudCopy;
+        void* r = oCbUpload(desc, span);
+        *(const float**)span = src;
+        return r;
+    }
     void* r = oCbUpload(desc, span);
     if (g_spActive && t_renderDepth > 0 && g_last.valid && g_last.handle) {
         uintptr_t src = *(uintptr_t*)span, mv = (uintptr_t)*g_last.handle;
@@ -1014,4 +1069,5 @@ void Camera_Dump() {
 }
 
 void Camera_ViewDump() { ViewDumpStart(); }
+void Camera_CloudDump() { g_cloudDump = 6; LOGI("clouddump: armed"); }
 void Camera_SetHeadFollow(int v) { SetHeadFollow(v); }

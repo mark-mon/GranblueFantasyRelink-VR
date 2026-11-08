@@ -1671,6 +1671,8 @@ void VR_OnPresent(IDXGISwapChain* sc) {
             else if (!strncmp(cmd, "edge=", 5)) { g_cfg.edgeClipping = cmd + 5; LOGI("edge_clipping -> %s", g_cfg.edgeClipping.c_str()); }
             else if (!strcmp(cmd, "camdump")) { void Camera_Dump(); Camera_Dump(); }
             else if (!strcmp(cmd, "record")) VR_RecordStart();
+            else if (!strncmp(cmd, "cloudfix=", 9)) { g_cfg.cloudFovFix = cmd[9] == '1'; LOGI("cloud_fov_fix -> %d", (int)g_cfg.cloudFovFix); }
+            else if (!strcmp(cmd, "clouddump")) { void Camera_CloudDump(); Camera_CloudDump(); }
             else if (!strcmp(cmd, "ctxprobe")) { void Discovery_Probe(const char*); Discovery_Probe("trigger"); }
             else if (!strncmp(cmd, "mtprotect=", 10)) { void Discovery_SetMtProtect(bool); Discovery_SetMtProtect(cmd[10] == '1'); }
             else if (!strncmp(cmd, "skipps=", 7)) { void PostFx_SetSkipList(const char*); PostFx_SetSkipList(cmd + 7); }

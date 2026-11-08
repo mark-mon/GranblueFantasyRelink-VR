@@ -146,3 +146,13 @@ Per-frame data is produced once per game frame, outside render-frame:
   "Capture render passes" (F10), "Re-detect frame history", and toggles for cloud sprites (`debug_cloud_sprites`),
   volumetric clouds, head tracking, AA and edge clipping. Recording costs no visible frame time (staging ring,
   read back a frame later, files written on a worker thread); 5 s is about 175 MB.
+- Found (1.0.3n): the clouds are not head-locked through their camera. A dump of the ray-march ParamBuffer (trigger
+  `clouddump`, upload size 0x170 through the constant-upload hook) shows `matView_` = the main view's matrix at upload
+  time (head-tracked) and `eyePosition_` = the camera eye. But `screenZ_` (+0x78) / `invAspectRatio_` (+0x7c) are
+  derived from the view's +0x9d4 / +0x9d0, which the mod sets to the *culling* FOV (eye FOV + edge-clipping margin):
+  on the test PC 117.7 x 122.2 deg instead of the eye's 90 x 90. Drawn too wide, the clouds turn slower than the
+  world when the head turns, which looks like they stick to the headset. Head tracking off hides it (no head motion).
+  Fix: `PatchCloudParams` in hkCbUpload uploads a copy with screenZ_ = (h/2) / tanY and invAspect =
+  tanX * screenZ_ / ((w/2)(w/h)) from eye 0's render tangents (`cloud_fov_fix`, default on; Debug page toggle,
+  trigger `cloudfix=0/1`). Eye 1's replay reuses eye 0's buffer (same FOV with symmetric_fov; only the IPD differs).
+  Other effects that derive a projection from +0x9d4 / +0x9d0 would have the same problem (cloud sprites?).

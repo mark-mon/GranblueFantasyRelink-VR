@@ -132,6 +132,7 @@ void Register() {
         o.AddAction("Debug", "Capture render passes (F10)", [] { Passes_Start(); }, "Writes GranblueVR_passes.txt and the shaders of the next frame.");
         o.AddAction("Debug", "Re-detect frame history", [] { Temporal_Schedule(30); }, "Look again for textures the game keeps from the previous frame (kept per eye).");
         o.AddBool("Debug", "debug_cloud_sprites", "Cloud sprites", &g_cfg.cloudSprites, "The game's flat billboard clouds.", [] { PostFx_SkipConfigChanged(); });
+        o.AddBool("Debug", "cloud_fov_fix", "Cloud FOV fix", &g_cfg.cloudFovFix, "Draw the 3D clouds with the eye's field of view (on) or the game's culling one (off, old behaviour).");
         o.AddBool("Debug", "", "Volumetric clouds", &g_cfg.volumetricClouds, "The game's 3D clouds.", [] { PostFx_SkipConfigChanged(); });
         o.AddBool("Debug", "", "Head tracking", &g_cfg.headTracking, "Apply the headset pose to the game camera.");
         auto& aa2 = o.AddChoice("Debug", "", "Anti-aliasing", &g_cfg.aaMode, { "off", "fxaa", "taa", "game" }, "", [] { PostFx_AaFromConfig(); });

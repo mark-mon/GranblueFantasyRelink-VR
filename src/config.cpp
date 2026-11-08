@@ -259,6 +259,7 @@ bool LoadConfig(const std::wstring& path, Config& cfg) {
         else if (key == "render_scale") ok = ParseFloat(val, cfg.renderScale, 0.25f, 3.f);
         else if (key == "hud_distance") ok = ParseFloat(val, cfg.hudDistance, 0.3f, 20.f);
         else if (key == "hud_follow_head") { if (lval == "true" || lval == "1") cfg.hudFollowHead = true; else if (lval == "false" || lval == "0") cfg.hudFollowHead = false; else ok = false; }
+        else if (key == "cloud_fov_fix") { if (lval == "true" || lval == "1") cfg.cloudFovFix = true; else if (lval == "false" || lval == "0") cfg.cloudFovFix = false; else ok = false; }
         else if (key == "debug_menu") { if (lval == "true" || lval == "1") cfg.debugMenu = true; else if (lval == "false" || lval == "0") cfg.debugMenu = false; else ok = false; }
         else if (key == "debug_cloud_sprites") { if (lval == "true" || lval == "1") cfg.cloudSprites = true; else if (lval == "false" || lval == "0") cfg.cloudSprites = false; else ok = false; }
         else if (key == "volumetric_clouds") { if (lval == "true" || lval == "1") cfg.volumetricClouds = true; else if (lval == "false" || lval == "0") cfg.volumetricClouds = false; else ok = false; }

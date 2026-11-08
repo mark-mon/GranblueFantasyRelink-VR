@@ -52,6 +52,7 @@ struct Config {
     float hudDistance = 1.5f;        // reserved: metres from the eyes
     float hudSize = 1.6f;            // reserved: HUD panel width in metres
     bool hudFollowHead = true;       // false: the HUD panel stays fixed in space in front of the recentred forward direction
+    bool cloudFovFix = true;         // hidden: give the volumetric-cloud ray-march the eye's real FOV
     bool debugMenu = false;          // hidden: show the Debug page in the VR menu
     bool cloudSprites = true;        // debug menu: the game's billboard cloud sprites
     bool volumetricClouds = true;    // the game's ray-marched clouds (head-locked in VR, hide characters in cutscenes)
