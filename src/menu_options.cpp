@@ -18,6 +18,10 @@ void VR_SetEyeTrackingOn(bool on);
 void VR_Recenter();
 void Vrs_SetActive(bool on);
 void Vrs_ConfigChanged();
+void VR_RecordStart();
+bool VR_Recording();
+void Temporal_Schedule(int frames);
+void Passes_Start();
 void PostFx_AaFromConfig();
 void PostFx_TaaChanged();
 void PostFx_SkipConfigChanged();
@@ -121,6 +125,20 @@ void Register() {
     ch.choiceLabels = { "L3 + R3", "LT + RT", "Keyboard only" };
     o.AddBool("Menu", "menu_chord_pass", "Menu button reaches game", &g_cfg.menuChordPass,
               "On: a short press still does the game's action (L3 + R3 = party skill); only holding opens the menu.", [] { ApplyMenuInput(); });
+    // ---- Debug (debug_menu = true in config.txt): tools for diagnosing problems in the headset
+    if (g_cfg.debugMenu) {
+        o.AddAction("Debug", "Record 5 s of frames", [] { VR_RecordStart(); },
+                    "Left eye, 10 frames per second, into GranblueVR_record_<time> with the head angles. Close the menu and move your head.");
+        o.AddAction("Debug", "Capture render passes (F10)", [] { Passes_Start(); }, "Writes GranblueVR_passes.txt and the shaders of the next frame.");
+        o.AddAction("Debug", "Re-detect frame history", [] { Temporal_Schedule(30); }, "Look again for textures the game keeps from the previous frame (kept per eye).");
+        o.AddBool("Debug", "debug_cloud_sprites", "Cloud sprites", &g_cfg.cloudSprites, "The game's flat billboard clouds.", [] { PostFx_SkipConfigChanged(); });
+        o.AddBool("Debug", "", "Volumetric clouds", &g_cfg.volumetricClouds, "The game's 3D clouds.", [] { PostFx_SkipConfigChanged(); });
+        o.AddBool("Debug", "", "Head tracking", &g_cfg.headTracking, "Apply the headset pose to the game camera.");
+        auto& aa2 = o.AddChoice("Debug", "", "Anti-aliasing", &g_cfg.aaMode, { "off", "fxaa", "taa", "game" }, "", [] { PostFx_AaFromConfig(); });
+        aa2.choiceLabels = { "Off", "FXAA", "Mild TAA", "Game TAA" };
+        auto& ec2 = o.AddChoice("Debug", "", "Edge clipping", &g_cfg.edgeClipping, { "off", "default", "experimental" }, "");
+        ec2.choiceLabels = { "Off", "Default", "Experimental" };
+    }
     o.AddInt("Menu", "menu_hold_ms", "Menu hold time (ms)", &g_cfg.menuHoldMs, 100, 3000, 100,
              "How long the menu button must be held.", [] { ApplyMenuInput(); });
 }

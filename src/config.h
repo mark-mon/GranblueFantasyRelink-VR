@@ -52,6 +52,8 @@ struct Config {
     float hudDistance = 1.5f;        // reserved: metres from the eyes
     float hudSize = 1.6f;            // reserved: HUD panel width in metres
     bool hudFollowHead = true;       // false: the HUD panel stays fixed in space in front of the recentred forward direction
+    bool debugMenu = false;          // hidden: show the Debug page in the VR menu
+    bool cloudSprites = true;        // debug menu: the game's billboard cloud sprites
     bool volumetricClouds = true;    // the game's ray-marched clouds (head-locked in VR, hide characters in cutscenes)
     bool hudBlurBackdrop = false;    // keep the game's frosted-glass HUD panel backdrops (show a misplaced copy of the scene in VR)
     float screenDistance = 2.5f;     // flat mode: virtual screen distance (m)

@@ -140,3 +140,9 @@ Per-frame data is produced once per game frame, outside render-frame:
   (`6fc023ddc2d36a64`, reads g_OldColorTexture / g_PrevZTexture) froze the output and skipping the DoF CS
   (`c201b84553cc07e7`) blacked it out: both are on the path to the final image in cutscenes, so they can't be
   switched off for testing. Cloud sprites (`55beb9f1...`, `94a192cf...`, `7c22a064...`) are billboards.
+- 1.0.3l: `debug_menu = true` (hidden key) adds a Debug page to the VR menu, so problems can be investigated in the
+  headset without leaving the game: "Record 5 s of frames" (left eye, half resolution, 10 fps, BMPs plus
+  frames.csv with head yaw / pitch / position, in GranblueVR_record_<time>; trigger `record` does the same),
+  "Capture render passes" (F10), "Re-detect frame history", and toggles for cloud sprites (`debug_cloud_sprites`),
+  volumetric clouds, head tracking, AA and edge clipping. Recording costs no visible frame time (staging ring,
+  read back a frame later, files written on a worker thread); 5 s is about 175 MB.

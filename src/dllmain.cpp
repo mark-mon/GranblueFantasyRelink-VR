@@ -7,8 +7,8 @@
 Config g_cfg;
 std::wstring g_modDir;
 
-#define GBVR_VERSION "1.0.3k"
-const char* kModVersion = "1.0.3k";
+#define GBVR_VERSION "1.0.3l"
+const char* kModVersion = "1.0.3l";
 
 // ---------------- dinput8 proxy ----------------
 static HMODULE g_realDI = nullptr;

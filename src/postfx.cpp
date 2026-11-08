@@ -159,6 +159,7 @@ const uint64_t kCloudCs = 0x9a9dc84eb55f13d0ull, kCloudPs = 0x01a437224bb11c66ul
 void AddConfigSkips() {
     if (!g_cfg.hudBlurBackdrop) g_skipHashes.push_back(kHudBackdropPs);
     if (!g_cfg.volumetricClouds) { g_skipHashes.push_back(kCloudCs); g_skipHashes.push_back(kCloudPs); }
+    if (!g_cfg.cloudSprites) for (uint64_t h : { 0x55beb9f1f269b0e1ull, 0x94a192cf188bca60ull, 0x7c22a064842bba29ull }) g_skipHashes.push_back(h);   // billboard cloud sprites
 }
 std::unordered_map<void*, bool> g_skipShader;   // shader -> skip (filled at creation)
 volatile LONG g_skipped = 0;

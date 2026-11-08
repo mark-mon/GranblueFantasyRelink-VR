@@ -10,6 +10,10 @@
 #include <intrin.h>
 #include <atomic>
 #include <string>
+#include <thread>
+#include <deque>
+#include <condition_variable>
+#include <mutex>
 #define XR_USE_GRAPHICS_API_D3D11
 #define XR_USE_PLATFORM_WIN32
 #include <openxr/openxr.h>
@@ -1358,11 +1362,127 @@ static void WriteBmp(const std::wstring& path, ID3D11Texture2D* src, bool keepAl
     st->Release();
 }
 
+// ---- frame recorder (debug menu "Record 5 s of frames"): the left eye at half resolution, 10 frames per second,
+// as BMPs in GranblueVR_record_<time>\, plus frames.csv with the head yaw / pitch of each frame. GPU copies go to a
+// small ring of staging textures and are read back a frame or two later (no stall); a worker thread writes the files.
+namespace rec {
+struct Job { std::wstring path; uint32_t w, h; std::vector<uint8_t> bgr; };
+std::mutex mx; std::condition_variable cv; std::deque<Job> q; bool worker = false;
+void Worker() {
+    for (;;) {
+        Job j;
+        { std::unique_lock<std::mutex> lk(mx); cv.wait(lk, [] { return !q.empty(); }); j = std::move(q.front()); q.pop_front(); }
+        FILE* f = _wfopen(j.path.c_str(), L"wb");
+        if (!f) continue;
+        uint32_t rowBytes = (j.w * 3 + 3) & ~3u, size = 54 + rowBytes * j.h;
+        uint8_t hdr[54] = { 'B', 'M' };
+        *(uint32_t*)(hdr + 2) = size; *(uint32_t*)(hdr + 10) = 54; *(uint32_t*)(hdr + 14) = 40;
+        *(int32_t*)(hdr + 18) = (int32_t)j.w; *(int32_t*)(hdr + 22) = -(int32_t)j.h;
+        *(uint16_t*)(hdr + 26) = 1; *(uint16_t*)(hdr + 28) = 24; *(uint32_t*)(hdr + 34) = rowBytes * j.h;
+        fwrite(hdr, 1, 54, f);
+        std::vector<uint8_t> pad(rowBytes - j.w * 3, 0);
+        for (uint32_t y = 0; y < j.h; ++y) { fwrite(&j.bgr[(size_t)y * j.w * 3], 1, j.w * 3, f); if (!pad.empty()) fwrite(pad.data(), 1, pad.size(), f); }
+        fclose(f);
+    }
+}
+const int kSlots = 4;
+bool on = false, requested = false;
+double t0 = 0, last = -1, seconds = 5, interval = 0.1;
+int next = 0, written = 0;
+ID3D11Texture2D* st[kSlots] = {}; int pend[kSlots] = { -1, -1, -1, -1 };
+UINT sw = 0, sh = 0; DXGI_FORMAT sfmt = DXGI_FORMAT_UNKNOWN;
+std::wstring dir; FILE* csv = nullptr;
+double Now() { LARGE_INTEGER f, c; QueryPerformanceFrequency(&f); QueryPerformanceCounter(&c); return (double)c.QuadPart / (double)f.QuadPart; }
+void Release() { for (auto& s : st) if (s) { s->Release(); s = nullptr; } for (auto& p : pend) p = -1; sw = sh = 0; }
+// read back finished copies; wait = block (end of the recording)
+void Drain(ID3D11DeviceContext* ctx, bool wait) {
+    for (int k = 0; k < kSlots; ++k) {
+        if (pend[k] < 0) continue;
+        D3D11_MAPPED_SUBRESOURCE m;
+        if (FAILED(ctx->Map(st[k], 0, D3D11_MAP_READ, wait ? 0 : D3D11_MAP_FLAG_DO_NOT_WAIT, &m))) continue;
+        bool rgba = sfmt == DXGI_FORMAT_R8G8B8A8_UNORM || sfmt == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB || sfmt == DXGI_FORMAT_R8G8B8A8_TYPELESS;
+        Job j; j.w = sw / 2; j.h = sh / 2; j.bgr.resize((size_t)j.w * j.h * 3);
+        for (uint32_t y = 0; y < j.h; ++y) {
+            const uint8_t* r0 = (const uint8_t*)m.pData + (size_t)(2 * y) * m.RowPitch;
+            const uint8_t* r1 = r0 + m.RowPitch;
+            uint8_t* o = &j.bgr[(size_t)y * j.w * 3];
+            for (uint32_t x = 0; x < j.w; ++x) {
+                const uint8_t *a = r0 + x * 8, *b = r1 + x * 8;
+                int c0 = (a[0] + a[4] + b[0] + b[4]) >> 2, c1 = (a[1] + a[5] + b[1] + b[5]) >> 2, c2 = (a[2] + a[6] + b[2] + b[6]) >> 2;
+                o[x * 3 + 0] = (uint8_t)(rgba ? c2 : c0); o[x * 3 + 1] = (uint8_t)c1; o[x * 3 + 2] = (uint8_t)(rgba ? c0 : c2);
+            }
+        }
+        ctx->Unmap(st[k], 0);
+        wchar_t name[32]; swprintf(name, 32, L"frame_%03d.bmp", pend[k]);
+        j.path = dir + name;
+        { std::lock_guard<std::mutex> lk(mx); q.push_back(std::move(j)); if (!worker) { worker = true; std::thread(Worker).detach(); } }
+        cv.notify_one();
+        pend[k] = -1; ++written;
+    }
+}
+} // namespace rec
+
+void VR_RecordStart() { rec::requested = true; }
+bool VR_Recording() { return rec::on || rec::requested; }
+
+static void RecordFrame(ID3D11Texture2D* bb) {
+    using namespace rec;
+    if (requested && !on) {
+        requested = false;
+        SYSTEMTIME tm; GetLocalTime(&tm);
+        wchar_t sub[64]; swprintf(sub, 64, L"GranblueVR_record_%02d%02d%02d\\", tm.wHour, tm.wMinute, tm.wSecond);
+        dir = g_modDir + sub;
+        CreateDirectoryW(dir.c_str(), nullptr);
+        csv = _wfopen((dir + L"frames.csv").c_str(), L"w");
+        if (csv) fprintf(csv, "frame,seconds,head_yaw_deg,head_pitch_deg,head_x,head_y,head_z\n");
+        on = true; t0 = Now(); last = -1; next = 0; written = 0;
+        LOGI("Record: started (%.0f s at %.0f fps, left eye at half resolution) -> %ls", seconds, 1.0 / interval, sub);
+    }
+    if (!on) return;
+    double t = Now() - t0;
+    if (t > seconds) {
+        Drain(g.ctx, true);
+        on = false;
+        if (csv) { fclose(csv); csv = nullptr; }
+        LOGI("Record: done, %d frames", written);
+        return;
+    }
+    Drain(g.ctx, false);
+    if (last >= 0 && t - last < interval) return;
+    D3D11_TEXTURE2D_DESC d; bb->GetDesc(&d);
+    if (d.Width != sw || d.Height != sh || d.Format != sfmt) {
+        Release();
+        D3D11_TEXTURE2D_DESC sd = d;
+        sd.Usage = D3D11_USAGE_STAGING; sd.BindFlags = 0; sd.CPUAccessFlags = D3D11_CPU_ACCESS_READ; sd.MiscFlags = 0;
+        sd.MipLevels = 1; sd.ArraySize = 1; sd.SampleDesc.Count = 1;
+        for (auto& s : st) if (FAILED(g.dev->CreateTexture2D(&sd, nullptr, &s))) { LOGE("Record: staging texture failed"); Release(); on = false; return; }
+        sw = d.Width; sh = d.Height; sfmt = d.Format;
+    }
+    int k = -1;
+    for (int i = 0; i < kSlots; ++i) if (pend[i] < 0) { k = i; break; }
+    if (k < 0) return;   // GPU behind: skip this frame
+    g.ctx->CopyResource(st[k], bb);
+    pend[k] = next;
+    last = t;
+    if (csv) {
+        Pose p; float yaw = 0, pitch = 0; Vec3f pos{ 0, 0, 0 };
+        if (VR_GetHeadPose(&p)) {
+            // forward = rotate (0,0,-1)
+            float x = p.ori.x, y = p.ori.y, z = p.ori.z, w = p.ori.w;
+            float fx = -(2 * (x * z + w * y)), fy = -(2 * (y * z - w * x)), fz = -(1 - 2 * (x * x + y * y));
+            yaw = atan2f(-fx, -fz) * 57.29578f; pitch = asinf((std::max)(-1.f, (std::min)(1.f, fy))) * 57.29578f; pos = p.pos;
+        }
+        fprintf(csv, "%d,%.3f,%.2f,%.2f,%.3f,%.3f,%.3f\n", next, t, yaw, pitch, pos.x, pos.y, pos.z);
+    }
+    ++next;
+}
+
 void VR_StereoCaptureEye(int eye) {
     if (!g.stFrameBegun || !g.target) return;
     ID3D11Texture2D* bb = nullptr;
     if (FAILED(g.target->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&bb))) return;
     D3D11_TEXTURE2D_DESC bd; bb->GetDesc(&bd);
+    if (eye == 0) RecordFrame(bb);
     if (g.dumpEyes == eye + 1) {   // eye 0, eye 1, then the quad-view insets (eye2 = left inset, eye3 = right)
         wchar_t name[64]; swprintf(name, 64, L"GranblueVR_eye%d.bmp", eye);
         WriteBmp(g_modDir + name, bb);
@@ -1550,6 +1670,7 @@ void VR_OnPresent(IDXGISwapChain* sc) {
             else if (!strncmp(cmd, "camhead=", 8)) { void Camera_SetHeadFollow(int); Camera_SetHeadFollow(atoi(cmd + 8)); }
             else if (!strncmp(cmd, "edge=", 5)) { g_cfg.edgeClipping = cmd + 5; LOGI("edge_clipping -> %s", g_cfg.edgeClipping.c_str()); }
             else if (!strcmp(cmd, "camdump")) { void Camera_Dump(); Camera_Dump(); }
+            else if (!strcmp(cmd, "record")) VR_RecordStart();
             else if (!strcmp(cmd, "ctxprobe")) { void Discovery_Probe(const char*); Discovery_Probe("trigger"); }
             else if (!strncmp(cmd, "mtprotect=", 10)) { void Discovery_SetMtProtect(bool); Discovery_SetMtProtect(cmd[10] == '1'); }
             else if (!strncmp(cmd, "skipps=", 7)) { void PostFx_SetSkipList(const char*); PostFx_SetSkipList(cmd + 7); }
