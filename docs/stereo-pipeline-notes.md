@@ -127,10 +127,16 @@ Per-frame data is produced once per game frame, outside render-frame:
   follow the head, so the clouds are head-locked. PS `01a437224bb11c66` (CloudColor/NormalVelocity/Depth/Mask) writes
   them into the G-buffer with depth, so the misplaced cloud depth covers characters. Skipping that PS alone fixes the
   characters (test 009).
-- 1.0.3j: `volumetric_clouds` (default false, menu Display) skips both the ray-march dispatch (new CS skip:
+- 1.0.3j: `volumetric_clouds` (menu Display; default false in 1.0.3j, back to true in 1.0.3k because the user's
+  "textures slide with the HMD" report was not fixed by it) skips both the ray-march dispatch (new CS skip:
   `PostFx_ReplaceCS` marks the context, `hkDispatchD` drops the dispatch) and the composite. Leftover: some flat,
   polygonal cloud cards in the sky become visible where the volumetric layer used to cover them.
 - Proper fix (todo): rewrite cb11 per eye (`matView_` / `eyePosition_` from the eye's view, `screenZ_` / aspect
   from the eye FOV; the asymmetric eye frustum needs an approximation) for eye 0, and redirect the bind to a per-eye
   copy in the eye-1 replay. The cloud history textures (1124x1176 fmt 26, "temporal ... skipped") would also need to
   be per eye.
+- Still open: the user's in-headset report "looking left / right in cutscenes, the textures stay attached to the HMD
+  and slide away" is unchanged with clouds off. It only shows with head motion. Skipping the DoF temporal blend
+  (`6fc023ddc2d36a64`, reads g_OldColorTexture / g_PrevZTexture) froze the output and skipping the DoF CS
+  (`c201b84553cc07e7`) blacked it out: both are on the path to the final image in cutscenes, so they can't be
+  switched off for testing. Cloud sprites (`55beb9f1...`, `94a192cf...`, `7c22a064...`) are billboards.
