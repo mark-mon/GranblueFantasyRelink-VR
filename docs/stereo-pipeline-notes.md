@@ -117,3 +117,20 @@ Per-frame data is produced once per game frame, outside render-frame:
 - On another build: if a required entry is missing, head tracking / stereo are disabled with a clear log line, and
   each failing pattern's match count is logged (0 = code changed, 2+ = pattern too short).
 - Shared, generalised version: vr-sharedtools `sigscan/`.
+
+## 1.0.3: cutscene clouds (2026-11-08)
+- Report: in cutscenes, characters' faces / skin vanish, and "textures stick to the HMD" when looking around (both
+  eyes; much worse with head tracking). Reproduced on the test PC with the user's save (airship cutscene).
+- Cause: the game's volumetric clouds. CS `9a9dc84eb55f13d0` ray-marches them at half resolution with its own camera
+  in its ParamBuffer (cb11: `matView_` rows 0-2 rotate the screen ray to world, `eyePosition_` at row 4, `screenSize_`,
+  `nearZ_/farZ_/screenZ_/invAspectRatio_` = a symmetric projection), not the per-eye SceneBuffer. That camera doesn't
+  follow the head, so the clouds are head-locked. PS `01a437224bb11c66` (CloudColor/NormalVelocity/Depth/Mask) writes
+  them into the G-buffer with depth, so the misplaced cloud depth covers characters. Skipping that PS alone fixes the
+  characters (test 009).
+- 1.0.3j: `volumetric_clouds` (default false, menu Display) skips both the ray-march dispatch (new CS skip:
+  `PostFx_ReplaceCS` marks the context, `hkDispatchD` drops the dispatch) and the composite. Leftover: some flat,
+  polygonal cloud cards in the sky become visible where the volumetric layer used to cover them.
+- Proper fix (todo): rewrite cb11 per eye (`matView_` / `eyePosition_` from the eye's view, `screenZ_` / aspect
+  from the eye FOV; the asymmetric eye frustum needs an approximation) for eye 0, and redirect the bind to a per-eye
+  copy in the eye-1 replay. The cloud history textures (1124x1176 fmt 26, "temporal ... skipped") would also need to
+  be per eye.

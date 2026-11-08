@@ -143,7 +143,7 @@ void PostFx_OnShaderCreated(void* shader, uint64_t hash) {
 }
 // ---- skipping draws by pixel shader (debug_skip_ps = hash,hash,...; and effects that are removed by skipping)
 namespace {
-struct SkipCtx { ID3D11DeviceContext* c; bool skip; };
+struct SkipCtx { ID3D11DeviceContext* c; bool skip; bool skipCs; };
 SkipCtx g_skipCtx[64]; volatile LONG g_nSkipCtx = 0;
 std::mutex g_skipMx;
 std::vector<uint64_t> g_skipHashes; bool g_skipParsed = false;
@@ -151,6 +151,15 @@ std::vector<uint64_t> g_skipHashes; bool g_skipParsed = false;
 // behind panels through a mask. On the VR HUD panel that pasted scene no longer lines up with the world behind it.
 // This is the masked paste (g_ColorTexture + g_MaskTexture, discard where mask == 0).
 const uint64_t kHudBackdropPs = 0xe24514aebdeabacbull;
+// Volumetric clouds (cutscenes, sky scenes): a half-resolution ray-march (CS) with its own camera in its ParamBuffer
+// (matView_, eyePosition_, screenZ_), composited into the G-buffer with depth (PS, CloudColor/Depth/Mask textures).
+// That camera doesn't follow the head, so in VR the clouds stay fixed to the view and their depth covers characters
+// (faces and bodies vanish). volumetric_clouds = false skips both.
+const uint64_t kCloudCs = 0x9a9dc84eb55f13d0ull, kCloudPs = 0x01a437224bb11c66ull;
+void AddConfigSkips() {
+    if (!g_cfg.hudBlurBackdrop) g_skipHashes.push_back(kHudBackdropPs);
+    if (!g_cfg.volumetricClouds) { g_skipHashes.push_back(kCloudCs); g_skipHashes.push_back(kCloudPs); }
+}
 std::unordered_map<void*, bool> g_skipShader;   // shader -> skip (filled at creation)
 volatile LONG g_skipped = 0;
 volatile bool g_anySkip = false;
@@ -159,8 +168,8 @@ void ParseSkip() {
     g_skipParsed = true;
     const char* p = g_cfg.debugSkipPs.c_str();
     while (*p) { char* e = nullptr; unsigned long long h = _strtoui64(p, &e, 16); if (e == p) { ++p; continue; } if (h) g_skipHashes.push_back(h); p = e; }
-    if (!g_cfg.hudBlurBackdrop) g_skipHashes.push_back(kHudBackdropPs);
-    if (!g_skipHashes.empty()) LOGI("PostFx: skipping draws of %zu pixel shaders (debug_skip_ps%s)", g_skipHashes.size(), g_cfg.hudBlurBackdrop ? "" : ", HUD frosted backdrop");
+    AddConfigSkips();
+    if (!g_skipHashes.empty()) LOGI("PostFx: skipping %zu shaders (debug_skip_ps%s%s)", g_skipHashes.size(), g_cfg.hudBlurBackdrop ? "" : ", HUD frosted backdrop", g_cfg.volumetricClouds ? "" : ", volumetric clouds");
 }
 SkipCtx* SkipSlot(ID3D11DeviceContext* c) {
     LONG n = g_nSkipCtx;
@@ -169,7 +178,7 @@ SkipCtx* SkipSlot(ID3D11DeviceContext* c) {
     n = g_nSkipCtx;
     for (LONG i = 0; i < n; ++i) if (g_skipCtx[i].c == c) return &g_skipCtx[i];
     if (n >= 64) return nullptr;
-    g_skipCtx[n] = { c, false }; MemoryBarrier(); g_nSkipCtx = n + 1;
+    g_skipCtx[n] = { c, false, false }; MemoryBarrier(); g_nSkipCtx = n + 1;
     return &g_skipCtx[n];
 }
 }
@@ -185,7 +194,7 @@ void PostFx_SetSkipList(const char* list) {
         std::lock_guard<std::mutex> lk(g_skipMx);
         g_skipParsed = true; g_skipHashes.clear(); g_skipShader.clear();
         for (const char* p = list; *p; ) { char* e = nullptr; unsigned long long h = _strtoui64(p, &e, 16); if (e == p) { ++p; continue; } if (h) g_skipHashes.push_back(h); p = e; }
-        if (!g_cfg.hudBlurBackdrop) g_skipHashes.push_back(kHudBackdropPs);
+        AddConfigSkips();
     }
     Passes_ForEachShader([](void* sh, uint64_t h) {
         std::lock_guard<std::mutex> lk(g_skipMx);
@@ -222,7 +231,21 @@ ID3D11PixelShader* PostFx_ReplacePS(ID3D11DeviceContext* c, ID3D11PixelShader* p
     }
     return p;
 }
-ID3D11ComputeShader* PostFx_ReplaceCS(ID3D11DeviceContext*, ID3D11ComputeShader* p) { return p; }
+ID3D11ComputeShader* PostFx_ReplaceCS(ID3D11DeviceContext* c, ID3D11ComputeShader* p) {
+    if (g_anySkip) {
+        bool sk = false;
+        { std::lock_guard<std::mutex> lk(g_skipMx); auto it = g_skipShader.find(p); sk = it != g_skipShader.end(); }
+        if (SkipCtx* s = SkipSlot(c)) s->skipCs = sk;
+    }
+    return p;
+}
+// deferred-context Dispatch: true = drop it (the bound compute shader is on the skip list)
+bool PostFx_SkipDispatch(ID3D11DeviceContext* c) {
+    if (!g_anySkip) return false;
+    SkipCtx* s = SkipSlot(c);
+    if (s && s->skipCs) { InterlockedIncrement(&g_skipped); return true; }
+    return false;
+}
 // camera jitter scale for the current AA mode (the game's TAA needs its jitter; off/FXAA need none)
 float PostFx_JitterScale() {
     int m = AaMode_();

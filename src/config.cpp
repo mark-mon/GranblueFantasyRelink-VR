@@ -61,6 +61,9 @@ static const char* kDefaultConfig =
 "# hud_blur_backdrop: the game's frosted-glass panel backgrounds (a blurred copy of the screen). They show a\n"
 "# misplaced piece of the scene on the VR HUD, so they are off by default.\n"
 "hud_blur_backdrop = false\n"
+"# volumetric_clouds: the game's ray-marched clouds (cutscenes and some sky scenes). They don't follow your head\n"
+"# in VR yet: they stay fixed in your view and can hide characters' faces and bodies. Off by default.\n"
+"volumetric_clouds = false\n"
 "\n"
 "# Render resolution: match the headset (the game renders each eye at the runtime's recommended\n"
 "# per-eye size, widened to the field of view rendered). false = keep the game's own resolution.\n"
@@ -256,6 +259,7 @@ bool LoadConfig(const std::wstring& path, Config& cfg) {
         else if (key == "render_scale") ok = ParseFloat(val, cfg.renderScale, 0.25f, 3.f);
         else if (key == "hud_distance") ok = ParseFloat(val, cfg.hudDistance, 0.3f, 20.f);
         else if (key == "hud_follow_head") { if (lval == "true" || lval == "1") cfg.hudFollowHead = true; else if (lval == "false" || lval == "0") cfg.hudFollowHead = false; else ok = false; }
+        else if (key == "volumetric_clouds") { if (lval == "true" || lval == "1") cfg.volumetricClouds = true; else if (lval == "false" || lval == "0") cfg.volumetricClouds = false; else ok = false; }
         else if (key == "hud_blur_backdrop") { if (lval == "true" || lval == "1") cfg.hudBlurBackdrop = true; else if (lval == "false" || lval == "0") cfg.hudBlurBackdrop = false; else ok = false; }
         else if (key == "hud_size") ok = ParseFloat(val, cfg.hudSize, 0.1f, 20.f);
         else if (key == "scale_down_key" || key == "scale_up_key" || key == "stats_key" || key == "capture_key" || key == "screenshot_key" || key == "vrs_key" || key == "quad_key" || key == "eye_tracking_key" || key == "aa_key") {

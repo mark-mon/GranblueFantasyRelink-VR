@@ -58,6 +58,8 @@ void Register() {
                "Width of the HUD panel.");
     o.AddBool("Display", "hud_blur_backdrop", "HUD frosted backdrops", &g_cfg.hudBlurBackdrop,
               "The game's blurred panel backgrounds. They show a misplaced piece of the scene in VR.", [] { PostFx_SkipConfigChanged(); });
+    o.AddBool("Display", "volumetric_clouds", "Volumetric clouds", &g_cfg.volumetricClouds,
+              "The game's 3D clouds in cutscenes. In VR they stay fixed to your view and can hide characters.", [] { PostFx_SkipConfigChanged(); });
     o.AddAction("Display", "Recenter view", [] { VR_Recenter(); }, "Make the current head position the centre.");
 
     // ---- Anti-aliasing

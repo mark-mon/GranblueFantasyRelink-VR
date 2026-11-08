@@ -32,6 +32,7 @@ void Perf_OnExec(ID3D11DeviceContext*);
 ID3D11PixelShader* PostFx_ReplacePS(ID3D11DeviceContext*, ID3D11PixelShader*);
 ID3D11ComputeShader* PostFx_ReplaceCS(ID3D11DeviceContext*, ID3D11ComputeShader*);
 bool PostFx_SkipDraw(ID3D11DeviceContext*);
+bool PostFx_SkipDispatch(ID3D11DeviceContext*);
 void Vrs_OnSetRenderTargets(ID3D11DeviceContext*, UINT, ID3D11RenderTargetView* const*, ID3D11DepthStencilView*);
 bool Passes_Capturing(); void Passes_SetShader(ID3D11DeviceContext*, char, void*); void Passes_SetSRVs(ID3D11DeviceContext*, char, UINT, UINT, ID3D11ShaderResourceView* const*);
 void Passes_SetRTVs(ID3D11DeviceContext*, UINT, ID3D11RenderTargetView* const*, ID3D11DepthStencilView*); void Passes_SetUAVs(ID3D11DeviceContext*, UINT, UINT, ID3D11UnorderedAccessView* const*);
@@ -506,7 +507,7 @@ void STDMETHODCALLTYPE hkDrawIdx##SUFFIX(ID3D11DeviceContext* c, UINT a, UINT b,
 void STDMETHODCALLTYPE hkDraw##SUFFIX(ID3D11DeviceContext* c, UINT a, UINT b) { if (#SUFFIX[0] == 'D') { if (PostFx_SkipDraw(c)) return; HudDrawCheck(c, false); Passes_OnWork(c, "Draw", a, 1); } NoteDraw(c, #SUFFIX[0]); if (Capturing()) ++g_draws; H.draw(c, a, b); } \
 void STDMETHODCALLTYPE hkDrawIdxInst##SUFFIX(ID3D11DeviceContext* c, UINT a, UINT b, UINT d, INT e, UINT f) { if (#SUFFIX[0] == 'D') { if (PostFx_SkipDraw(c)) return; HudDrawCheck(c, true); Passes_OnWork(c, "DrawIndexedInst", a, b); } NoteDraw(c, #SUFFIX[0]); NoteInst(f, b); if (Capturing()) ++g_draws; H.drawIdxInst(c, a, b, d, e, f); } \
 void STDMETHODCALLTYPE hkDrawInst##SUFFIX(ID3D11DeviceContext* c, UINT a, UINT b, UINT d, UINT e) { if (#SUFFIX[0] == 'D') { if (PostFx_SkipDraw(c)) return; HudDrawCheck(c, false); Passes_OnWork(c, "DrawInst", a, b); } NoteDraw(c, #SUFFIX[0]); if (Capturing()) ++g_draws; H.drawInst(c, a, b, d, e); } \
-void STDMETHODCALLTYPE hkDispatch##SUFFIX(ID3D11DeviceContext* c, UINT x, UINT y, UINT z) { if (#SUFFIX[0] == 'D') Passes_OnWork(c, "X Dispatch", x, y); if (Capturing()) ++g_dispatches; H.dispatch(c, x, y, z); } \
+void STDMETHODCALLTYPE hkDispatch##SUFFIX(ID3D11DeviceContext* c, UINT x, UINT y, UINT z) { if (#SUFFIX[0] == 'D') { if (PostFx_SkipDispatch(c)) return; Passes_OnWork(c, "X Dispatch", x, y); } if (Capturing()) ++g_dispatches; H.dispatch(c, x, y, z); } \
 void STDMETHODCALLTYPE hkCopyRes##SUFFIX(ID3D11DeviceContext* c, ID3D11Resource* d, ID3D11Resource* s) { NoteCopy(d, s, 0); if (#SUFFIX[0] == 'D') Temporal_OnCopy(c, d, s); else Temporal_OnImmediateWrite(d); H.copyRes(c, d, s); } \
 void STDMETHODCALLTYPE hkCopyReg##SUFFIX(ID3D11DeviceContext* c, ID3D11Resource* d, UINT ds, UINT x, UINT y, UINT z, ID3D11Resource* s, UINT ss, const D3D11_BOX* bx) { NoteCopy(d, s, 1); if (#SUFFIX[0] == 'D') Temporal_OnCopy(c, d, s); else Temporal_OnImmediateWrite(d); H.copyReg(c, d, ds, x, y, z, s, ss, bx); }
 
