@@ -22,6 +22,7 @@
 #include "globals.h"
 #include "MinHook.h"
 #include "camera.h"
+#include "gameaddr.h"
 void Replay_SetContext(ID3D11DeviceContext* c);
 void MapLog_Start(int); void Camera_InstLog(int); void Discovery_Rehook(); void MapLog_OnPresent(); void MapLog_Marker(char, uintptr_t);
 
@@ -879,9 +880,24 @@ static bool EnsureEyeSwapchains(const D3D11_TEXTURE2D_DESC& bb) {
 }
 
 bool Movie_Playing(); void Movie_Install();
+// In-engine cutscenes: the game keeps a flag set while one plays (found by comparing memory in gameplay and in a
+// cutscene; gameaddr.cpp GA_Cutscene). cutscene_mode = theater shows them on the flat screen like the movies.
+bool VR_CutscenePlaying() {
+    uintptr_t a = GA(GA_Cutscene);
+    bool on = a && *(volatile uint8_t*)a != 0;   // a byte (the game writes it with setne)
+    static bool last = false;
+    if (on != last) {
+        last = on;
+        uintptr_t b = GA(GA_Cutscene2);
+        LOGI("Cutscene: %s (second flag %d)", on ? "started" : "ended", b ? (int)*(volatile uint8_t*)b : -1);
+    }
+    return on;
+}
+bool VR_CutsceneTheater() { return g_cfg.cutsceneMode == "theater" && VR_CutscenePlaying(); }
 bool VR_StereoWanted() {
     if (g_cfg.debugNoXr) return g_cfg.vrMode == "stereo" && g.target;
     if (Movie_Playing()) return false;                       // pre-rendered movie: theater mode
+    if (VR_CutsceneTheater()) return false;                  // in-engine cutscene shown on the flat screen
     if (GetTickCount() < g.flatHoldUntil) return false;      // flicker guard (see NoteStereoSwitch)
     return g_cfg.vrMode == "stereo" && !g.disabled && g.sess && g.running && g.local;
 }
@@ -1646,12 +1662,13 @@ void VR_OnPresent(IDXGISwapChain* sc) {
     if ((g.frames % 300) == 0) Movie_Install();   // the Bink DLL may be loaded late
     { static int pl = 0; if (g.stFrameBegun && pl < 8) { ++pl; LOGD("Present (stereo frame) execs %llu", Discovery_ExecCount()); } }
     if ((g.frames & 63) == 1) { DXGI_SWAP_CHAIN_DESC sd; if (SUCCEEDED(sc->GetDesc(&sd))) Discovery_SetScreen(sd.BufferDesc.Width, sd.BufferDesc.Height); }
+    { void StateScan_Tick(); StateScan_Tick(); }
     // File trigger for automation: write a command word into GranblueVR.trigger next to the DLL.
     if ((g.frames % 30) == 0) {
         std::wstring tp = g_modDir + L"GranblueVR.trigger";
         FILE* tf = _wfopen(tp.c_str(), L"rb");
         if (tf) {
-            char cmd[64] = {};
+            char cmd[512] = {};
             fread(cmd, 1, sizeof(cmd) - 1, tf);
             fclose(tf);
             DeleteFileW(tp.c_str());
@@ -1671,6 +1688,9 @@ void VR_OnPresent(IDXGISwapChain* sc) {
             else if (!strncmp(cmd, "edge=", 5)) { g_cfg.edgeClipping = cmd + 5; LOGI("edge_clipping -> %s", g_cfg.edgeClipping.c_str()); }
             else if (!strcmp(cmd, "camdump")) { void Camera_Dump(); Camera_Dump(); }
             else if (!strcmp(cmd, "record")) VR_RecordStart();
+            else if (!strncmp(cmd, "snap=", 5)) { void StateScan_Snap(int); StateScan_Snap(atoi(cmd + 5)); }
+            else if (!strcmp(cmd, "snapdiff")) { void StateScan_Diff(); StateScan_Diff(); }
+            else if (!strncmp(cmd, "snapwatch=", 10)) { void StateScan_Watch(const char*); StateScan_Watch(cmd + 10); }
             else if (!strncmp(cmd, "cloudfix=", 9)) { g_cfg.cloudFovFix = cmd[9] == '1'; LOGI("cloud_fov_fix -> %d", (int)g_cfg.cloudFovFix); }
             else if (!strcmp(cmd, "clouddump")) { void Camera_CloudDump(); Camera_CloudDump(); }
             else if (!strcmp(cmd, "ctxprobe")) { void Discovery_Probe(const char*); Discovery_Probe("trigger"); }

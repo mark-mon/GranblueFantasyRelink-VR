@@ -14,6 +14,7 @@
 void MapLog_Marker(char, uintptr_t);
 static void InstStats(const char* tag);
 extern volatile int g_recEye; extern volatile bool g_spActive;
+bool VR_CutsceneTheater();
 float g_eyeTanX = 0, g_eyeTanY = 0;   // eye 0 render FOV tangents of the current stereo frame (cloud FOV fix)
 extern int g_upN[2]; static void LogUploadDiffs();
 // engineDraw (exe+0x1a97d0) flips its double-buffer index for the per-object lists A/B (exe+0x718c908 /
@@ -413,7 +414,7 @@ void __fastcall hkUpdateView(void** h, const float* eye, const float* target, co
     memcpy(g_last.eye, eye, 16); memcpy(g_last.target, target, 16); memcpy(g_last.up, up, 16);
     g_last.a5 = a5; g_last.a6 = a6; g_last.handle = h; g_last.valid = true;
     Pose head;
-    if (!g_cfg.headTracking || !VR_GetHeadPose(&head)) { oUpdateView(h, eye, target, up, a5, a6, a7); return; }
+    if (!g_cfg.headTracking || VR_CutsceneTheater() || !VR_GetHeadPose(&head)) { oUpdateView(h, eye, target, up, a5, a6, a7); return; }
     alignas(16) float e[4], t[4], u[4];
     ApplyPose(eye, target, up, head, e, t, u);
     oUpdateView(h, e, t, u, a5, a6, a7);

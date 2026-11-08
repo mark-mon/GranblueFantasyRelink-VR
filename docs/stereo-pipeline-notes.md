@@ -156,3 +156,14 @@ Per-frame data is produced once per game frame, outside render-frame:
   tanX * screenZ_ / ((w/2)(w/h)) from eye 0's render tangents (`cloud_fov_fix`, default on; Debug page toggle,
   trigger `cloudfix=0/1`). Eye 1's replay reuses eye 0's buffer (same FOV with symmetric_fov; only the IPD differs).
   Other effects that derive a projection from +0x9d4 / +0x9d0 would have the same problem (cloud sprites?).
+- 1.0.3s: `cutscene_mode = vr | theater` (menu View → Cutscenes). The cutscene flag was found with the new state
+  scanner (src/statescan.cpp; triggers `snap=0..3`, `snapdiff`, `snapwatch=rva,...`): snapshots of the exe's writable
+  data in gameplay (A) and in the airship cutscene (B), then candidates watched through title, loading, cutscene,
+  skip, gameplay and pause menu. exe+0x7038388 (byte, written with `setne`, near the view globals) is 1 exactly while
+  the cutscene plays. GA_Cutscene (two patterns) plus GA_Cutscene2 (exe+0x7396e38, diagnostics). In theater mode the
+  stereo path is off and hkUpdateView leaves the camera alone. Tested: detected 3-4 s after stereo resumes, theater
+  for the cutscene, back to stereo after skipping.
+- HUD copy flashing in cutscenes (VR mode): the scene-target table had 4 slots and new targets replaced slot 0, so two
+  cutscene targets evicted each other every frame (log spam "learned (4 known)"); now 16, round robin. That stopped the
+  thrashing but "UI missing" is still high in cutscene frames: open. Trace (debug log) now also records binds that
+  involve a known target with depth or several targets (`B`) and lone binds of unknown targets (`S`).

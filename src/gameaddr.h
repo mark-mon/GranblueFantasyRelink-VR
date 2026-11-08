@@ -19,6 +19,8 @@ enum GameAddrId : int {
     GA_FrameToken,      // per-frame value copied into the view constant block
     GA_ResIndex,        // index of the current resolution preset
     GA_ResTable,        // resolution preset table (6 x 0x4c)
+    GA_Cutscene,        // int: non-zero while an in-engine cutscene plays (found by memory diff, 1.0.3)
+    GA_Cutscene2,       // int: second cutscene flag (cross-check, diagnostics)
     GA_Count
 };
 

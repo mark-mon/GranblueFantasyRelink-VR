@@ -64,6 +64,8 @@ static const char* kDefaultConfig =
 "# volumetric_clouds: the game's ray-marched clouds (cutscenes and some sky scenes). In VR they don't follow your\n"
 "# head exactly and can cover characters; false removes them (the sky then shows some flat, jagged cloud cards).\n"
 "volumetric_clouds = true\n"
+"# cutscene_mode: in-engine story cutscenes in 3D VR (vr) or on the flat theater screen like the movies (theater).\n"
+"cutscene_mode = vr\n"
 "\n"
 "# Render resolution: match the headset (the game renders each eye at the runtime's recommended\n"
 "# per-eye size, widened to the field of view rendered). false = keep the game's own resolution.\n"
@@ -259,6 +261,7 @@ bool LoadConfig(const std::wstring& path, Config& cfg) {
         else if (key == "render_scale") ok = ParseFloat(val, cfg.renderScale, 0.25f, 3.f);
         else if (key == "hud_distance") ok = ParseFloat(val, cfg.hudDistance, 0.3f, 20.f);
         else if (key == "hud_follow_head") { if (lval == "true" || lval == "1") cfg.hudFollowHead = true; else if (lval == "false" || lval == "0") cfg.hudFollowHead = false; else ok = false; }
+        else if (key == "cutscene_mode") { if (lval == "vr" || lval == "theater") cfg.cutsceneMode = lval; else ok = false; }
         else if (key == "cloud_fov_fix") { if (lval == "true" || lval == "1") cfg.cloudFovFix = true; else if (lval == "false" || lval == "0") cfg.cloudFovFix = false; else ok = false; }
         else if (key == "debug_menu") { if (lval == "true" || lval == "1") cfg.debugMenu = true; else if (lval == "false" || lval == "0") cfg.debugMenu = false; else ok = false; }
         else if (key == "debug_cloud_sprites") { if (lval == "true" || lval == "1") cfg.cloudSprites = true; else if (lval == "false" || lval == "0") cfg.cloudSprites = false; else ok = false; }

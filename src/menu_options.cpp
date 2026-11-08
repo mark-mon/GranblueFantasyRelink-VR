@@ -99,6 +99,9 @@ void Register() {
 
     // ---- View
     o.AddBool("View", "head_tracking", "Head tracking", &g_cfg.headTracking, "Apply the headset pose to the game camera.");
+    auto& cm = o.AddChoice("View", "cutscene_mode", "Cutscenes", &g_cfg.cutsceneMode, { "vr", "theater" },
+                           "Story cutscenes in VR, or on the flat theater screen like the movies.");
+    cm.choiceLabels = { "VR", "Theater screen" };
     o.AddBool("View", "decoupled_pitch", "Decoupled pitch", &g_cfg.decoupledPitch,
               "Keeps the horizon level: the right stick moves the camera up and down without tilting the view. Look up and down with your head.");
     o.AddFloat("View", "world_scale", "World scale", &g_cfg.worldScale, 0.1f, 10.f, 0.05f, 2,

@@ -30,11 +30,14 @@ UINT g_w = 0, g_h = 0; DXGI_FORMAT g_fmt = DXGI_FORMAT_UNKNOWN;
 std::unordered_map<ID3D11BlendState*, ID3D11BlendState*> g_blendMap;
 volatile LONG g_uiDraws = 0;    // UI passes redirected since the last Present
 // Scene targets the UI was found on (diagnostics: other lone binds of them are counted).
-ID3D11RenderTargetView* g_knownS[4] = {}; int g_nKnown = 0;
+// Up to 16, replaced round-robin: cutscenes use more scene targets than gameplay, and with 4 slots two new targets
+// kept evicting each other from the same slot, so a lone UI bind was often not recognised (HUD copy in the scene).
+const int kMaxKnown = 16;
+ID3D11RenderTargetView* g_knownS[kMaxKnown] = {}; int g_nKnown = 0, g_knownNext = 0;
 volatile LONG g_viaPair = 0, g_viaKnown = 0, g_viaDraw = 0, g_pendingCount = 0;
 // per-frame trace of UI-related events (diagnostics): P pair bind [X,S], U lone S bind taken as UI,
 // L lone S bind not taken, F FinishCommandList (only on contexts that saw S this frame)
-char g_trace[2048]; int g_traceLen = 0; int g_traceDumpsMissing = 12, g_traceDumpsOk = 2; int g_traceFrames = 0;
+char g_trace[4096]; int g_traceLen = 0; int g_traceDumpsMissing = 12, g_traceDumpsOk = 2; int g_traceFrames = 0;
 int KnownIdx(ID3D11RenderTargetView* r);
 void Trace(char kind, int ctxIdx, ID3D11RenderTargetView* r = nullptr) { if (g_traceLen < (int)sizeof(g_trace) - 12) g_traceLen += snprintf(g_trace + g_traceLen, sizeof(g_trace) - g_traceLen, "%c%d:%d ", kind, ctxIdx, KnownIdx(r)); }
 int KnownIdx(ID3D11RenderTargetView* r);
@@ -133,11 +136,18 @@ ID3D11RenderTargetView* Hud_OnSetRenderTargets(ID3D11DeviceContext* c, UINT n, I
         if (g_enabled && EnsureTarget(r0)) { s->pending = true; InterlockedIncrement(&g_pendingCount); }
     }
     if (viaPair) Trace('U', ci, r0);
+    // diagnostics: other binds that involve a known scene target (with depth, several targets) or a lone depthless
+    // bind of an unknown target (another place the UI could be drawn): B<ctx>:<known idx>/<n><d if depth>, S<ctx>:-1
+    if (!viaPair && !(single && Known(r0))) {
+        bool anyKnown = false; for (UINT i = 0; i < n && rtvs; ++i) if (rtvs[i] && Known(rtvs[i])) anyKnown = true;
+        if (anyKnown && g_traceLen < (int)sizeof(g_trace) - 16) g_traceLen += snprintf(g_trace + g_traceLen, sizeof(g_trace) - g_traceLen, "B%d:%d/%u%s ", ci, KnownIdx(r0), n, dsv ? "d" : "");
+        else if (single) Trace('S', ci, r0);
+    }
     if (g_enabled && viaPair && EnsureTarget(r0)) {
         s->ui = true; repl = g_rtv;
         InterlockedIncrement(&g_viaPair);
         if (viaPair && !Known(r0)) {
-            if (g_nKnown < 4) g_knownS[g_nKnown++] = r0; else { g_knownS[0] = r0; }
+            if (g_nKnown < kMaxKnown) g_knownS[g_nKnown++] = r0; else { g_knownS[g_knownNext] = r0; g_knownNext = (g_knownNext + 1) % kMaxKnown; }
             LOGI("HUD: scene target %p learned (%d known)", (void*)r0, g_nKnown);
         }
         if (!wasUi) InterlockedIncrement(&g_uiDraws);
@@ -219,4 +229,4 @@ void Hud_Clear(ID3D11DeviceContext* imm) {
 }
 void Hud_TakeVia(LONG* pair, LONG* known, LONG* viaDraw) { *pair = InterlockedExchange(&g_viaPair, 0); *known = InterlockedExchange(&g_viaKnown, 0); *viaDraw = InterlockedExchange(&g_viaDraw, 0); }
 // the game recreated its targets (resize): forget the learned ones
-void Hud_ForgetTargets() { std::lock_guard<std::mutex> lk(g_mx); g_nKnown = 0; }
+void Hud_ForgetTargets() { std::lock_guard<std::mutex> lk(g_mx); g_nKnown = 0; g_knownNext = 0; }
