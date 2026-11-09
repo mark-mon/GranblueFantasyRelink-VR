@@ -156,7 +156,7 @@ Per-frame data is produced once per game frame, outside render-frame:
   tanX * screenZ_ / ((w/2)(w/h)) from eye 0's render tangents (`cloud_fov_fix`, default on; Debug page toggle,
   trigger `cloudfix=0/1`). Eye 1's replay reuses eye 0's buffer (same FOV with symmetric_fov; only the IPD differs).
   Other effects that derive a projection from +0x9d4 / +0x9d0 would have the same problem (cloud sprites?).
-- 1.0.3s: `cutscene_mode = vr | theater` (menu View → Cutscenes). The cutscene flag was found with the new state
+- 1.0.3s: `cutscene_mode = vr | theater` (menu View → Cutscenes; default theater since 1.0.3t). The cutscene flag was found with the new state
   scanner (src/statescan.cpp; triggers `snap=0..3`, `snapdiff`, `snapwatch=rva,...`): snapshots of the exe's writable
   data in gameplay (A) and in the airship cutscene (B), then candidates watched through title, loading, cutscene,
   skip, gameplay and pause menu. exe+0x7038388 (byte, written with `setne`, near the view globals) is 1 exactly while
