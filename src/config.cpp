@@ -243,7 +243,7 @@ bool LoadConfig(const std::wstring& path, Config& cfg) {
         else if (key == "vrs_mid_rate" || key == "vrs_outer_rate") {
             if (lval == "1x1" || lval == "2x1" || lval == "1x2" || lval == "2x2" || lval == "4x2" || lval == "2x4" || lval == "4x4") (key == "vrs_mid_rate" ? cfg.vrsMidRate : cfg.vrsOuterRate) = lval; else ok = false;
         }
-        else if (key == "edge_clipping") { if (lval == "off" || lval == "default" || lval == "experimental") cfg.edgeClipping = lval; else ok = false; }
+        else if (key == "edge_clipping") { if (lval == "off" || lval == "default" || lval == "experimental" || lval == "head") cfg.edgeClipping = lval; else ok = false; }
         else if (key == "decoupled_pitch") { if (lval == "true" || lval == "1") cfg.decoupledPitch = true; else if (lval == "false" || lval == "0") cfg.decoupledPitch = false; else ok = false; }
         else if (key == "fix_cull_fov") { if (lval == "true" || lval == "1") cfg.fixCullFov = true; else if (lval == "false" || lval == "0") cfg.fixCullFov = false; else ok = false; }
         else if (key == "eye_tracking") { if (lval == "true" || lval == "1") cfg.eyeTracking = true; else if (lval == "false" || lval == "0") cfg.eyeTracking = false; else ok = false; }

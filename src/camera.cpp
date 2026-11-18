@@ -553,6 +553,7 @@ void __fastcall hkCamUpdate(uintptr_t cam) {
         // edge_clipping: the camera's field of view for these checks (vertical; the camera is 16:9, so much wider
         // horizontally). Values over 180 deg are outside a camera's normal range ("experimental"): the user found
         // 200 best in testing, 165 nearly as good.
+        // "head" (debug, SWTOR approach): no widening; the camera object is aimed with the head instead (below).
         float edge = g_cfg.edgeClipping == "experimental" ? 200.f * 0.0174533f : g_cfg.edgeClipping == "default" ? 165.f * 0.0174533f : 0.f;
         float want = g_camFovOverride > 0.f ? g_camFovOverride : (std::max)(g_ourFov, edge);
         if (*pf != want) {
@@ -567,7 +568,7 @@ void __fastcall hkCamUpdate(uintptr_t cam) {
     if (cam && g_fovView && *(volatile uintptr_t*)(cam + 0x60) == g_fovView) {
         if (g_mainCam != cam) { g_mainCam = cam; LOGI("Camera: main camera object %p", (void*)cam); }
         Pose head;
-        if (g_camHead && g_fovOverridden && g_cfg.headTracking && VR_GetHeadPose(&head)) {
+        if ((g_camHead || (g_cfg.fixCullFov && g_cfg.edgeClipping == "head")) && g_fovOverridden && g_cfg.headTracking && VR_GetHeadPose(&head)) {
             float* c = (float*)(cam + 0x100);
             memcpy(g_camPoseSave, c, 48);
             alignas(16) float e[4], t[4], u[4];

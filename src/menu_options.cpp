@@ -140,8 +140,9 @@ void Register() {
         o.AddBool("Debug", "", "Head tracking", &g_cfg.headTracking, "Apply the headset pose to the game camera.");
         auto& aa2 = o.AddChoice("Debug", "", "Anti-aliasing", &g_cfg.aaMode, { "off", "fxaa", "taa", "game" }, "", [] { PostFx_AaFromConfig(); });
         aa2.choiceLabels = { "Off", "FXAA", "Mild TAA", "Game TAA" };
-        auto& ec2 = o.AddChoice("Debug", "", "Edge clipping", &g_cfg.edgeClipping, { "off", "default", "experimental" }, "");
-        ec2.choiceLabels = { "Off", "Default", "Experimental" };
+        auto& ec2 = o.AddChoice("Debug", "", "Edge clipping", &g_cfg.edgeClipping, { "off", "default", "experimental", "head" },
+                                "Head-aimed: the game's camera turns with your head and keeps the headset's field of view (test).");
+        ec2.choiceLabels = { "Off", "Default", "Experimental", "Head-aimed" };
     }
     o.AddInt("Menu", "menu_hold_ms", "Menu hold time (ms)", &g_cfg.menuHoldMs, 100, 3000, 100,
              "How long the menu button must be held.", [] { ApplyMenuInput(); });
